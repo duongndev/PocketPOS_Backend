@@ -1,66 +1,67 @@
 import express from 'express';
-const router = express.Router();
-import {
-  createCategory,
-  getCategories,
-  getCategoryById,
-  updateCategory,
-  deleteCategory,
-  hardDeleteCategory,
-  getCategoryStats
-} from '../controllers/category.controller.js';
-import { generalRateLimit } from '../middlewares/rateLimiting.middleware.js';
+import * as categoryCtrl from '../controllers/category.controller.js';
 import { catchAsync } from '../middlewares/errorHandler.middleware.js';
-
-
-
-/**
- * @desc    Tạo danh mục mới
- * @route   POST /api/categories
- * @access  Private (Admin/Manager)
- */
-router.post('/', catchAsync(createCategory));
+const router = express.Router();
 
 /**
  * @desc    Lấy tất cả danh mục
  * @route   GET /api/categories
- * @access  Public
  */
-router.get('/', catchAsync(getCategories));
+router.get('/', catchAsync(categoryCtrl.getCategories));
 
 /**
  * @desc    Lấy danh mục theo ID
  * @route   GET /api/categories/:id
- * @access  Public
  */
-router.get('/:id', catchAsync(getCategoryById));
+router.get('/:id', catchAsync(categoryCtrl.getCategoryById));
+
+/**
+ * @desc    Lấy cây danh mục
+ * @route   GET /api/categories/tree
+ */
+router.get('/tree', catchAsync(categoryCtrl.getCategoryTree));
+
+/**
+ * @desc    Tạo danh mục mới
+ * @route   POST /api/categories
+ */
+router.post('/', catchAsync(categoryCtrl.createCategory));
 
 /**
  * @desc    Cập nhật danh mục
  * @route   PUT /api/categories/:id
- * @access  Private (Admin/Manager)
  */
-router.put('/:id', catchAsync(updateCategory));
+router.put('/:id', catchAsync(categoryCtrl.updateCategory));
 
 /**
  * @desc    Xóa mềm danh mục (vô hiệu hóa)
  * @route   DELETE /api/categories/:id
- * @access  Private (Admin/Manager)
  */
-router.delete('/:id', catchAsync(deleteCategory));
+router.delete('/:id', catchAsync(categoryCtrl.deleteCategory));
+
+/**
+ * @desc    Kiểm tra ràng buộc trước khi xóa danh mục
+ * @route   GET /api/categories/:id/constraints
+ */
+router.get('/:id/constraints', catchAsync(categoryCtrl.checkCategoryDeleteConstraints));
+
+/**
+ * @desc    Khôi phục danh mục đã xóa mềm
+ * @route   POST /api/categories/:id/restore
+ */
+router.post('/:id/restore', catchAsync(categoryCtrl.restoreCategory));
+
 
 /**
  * @desc    Xóa cứng danh mục (xóa vĩnh viễn)
  * @route   DELETE /api/categories/:id/hard
- * @access  Private (Admin only)
  */
-router.delete('/:id/hard', catchAsync(hardDeleteCategory));
+router.delete('/:id/hard', catchAsync(categoryCtrl.hardDeleteCategory));
 
 /**
  * @desc    Lấy thống kê danh mục
  * @route   GET /api/categories/stats/overview
- * @access  Private (Admin/Manager)
  */
-router.get('/stats/overview', catchAsync(getCategoryStats));
+router.get('/stats/overview', catchAsync(categoryCtrl.getCategoryStats));
 
 export default router;
