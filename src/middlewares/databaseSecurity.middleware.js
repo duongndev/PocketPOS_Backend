@@ -269,13 +269,13 @@ const secureDBConnection = {
   setupConnectionMonitoring: (mongoose) => {
     mongoose.connection.on('connected', () => {
       if (process.env.NODE_ENV !== 'test') {
-        console.log('✅ Database connected securely');
+        console.log('Database connected securely');
       }
     });
 
     mongoose.connection.on('error', (err) => {
       if (process.env.NODE_ENV !== 'test') {
-        console.error('❌ Database connection error:', err);
+        console.error('Database connection error:', err);
         logger.error('LỖI KẾT NỐI CƠ SỞ DỮ LIỆU', {
           error: err.message
         });
@@ -284,7 +284,7 @@ const secureDBConnection = {
 
     mongoose.connection.on('disconnected', () => {
       if (process.env.NODE_ENV !== 'test') {
-        console.log('⚠️ Cơ sở dữ liệu đã ngắt kết nối');
+        console.log('Cơ sở dữ liệu đã ngắt kết nối');
         logger.warn('DATABASE_DISCONNECTED', {});
       }
     });
