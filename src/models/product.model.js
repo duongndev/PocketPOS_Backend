@@ -1,69 +1,57 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
+
 const productSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true
-    },
-
-    barcode: {
-      type: String,
-      required: true,
-      trim: true
-    },
-
-    categoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Category",
-      required: true
-    },
-
-    price: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-
-    costPrice: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-
-    stock: {
-      type: Number,
-      required: true,
-      min: 0,
-      default: 0
-    },
-
-    isActive: {
-      type: Boolean,
-      default: true
-    }
+{
+  name: {
+    type: String,
+    required: true,
+    trim: true
   },
-  {
-    timestamps: true,
-    versionKey: false
+
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
+    required: true,
+    index: true
+  },
+
+  brand: {
+    type: String,
+    default: "",
+    index: true
+  },
+
+  description: {
+    type: String,
+    default: ""
+  },
+
+  image: {
+    type: String,
+    default: ""
+  },
+
+  isActive: {
+    type: Boolean,
+    default: true,
+    index: true
   }
+
+},
+{
+  timestamps: true,
+  versionKey: false
+}
 );
 
-// ===== INDEXES =====
-productSchema.index({ barcode: 1 }, { unique: true });
+// ===== INDEX =====
+
 productSchema.index({ name: "text" });
-productSchema.index({ categoryId: 1 });
-productSchema.index({ isActive: 1 });
-
-// Additional indexes for better query performance
-productSchema.index({ price: 1 });
-productSchema.index({ stock: 1 });
-productSchema.index({ createdAt: -1 });
+productSchema.index({ description: "text" }); // For searching in descriptions
 productSchema.index({ categoryId: 1, isActive: 1 });
-
-// Compound index for common queries
-productSchema.index({ categoryId: 1, isActive: 1, name: 1 });
-productSchema.index({ isActive: 1, stock: 1 });
-productSchema.index({ categoryId: 1, price: 1 });
+productSchema.index({ brand: 1, isActive: 1 }); // Filter by active products of a brand
+productSchema.index({ categoryId: 1, brand: 1, isActive: 1 }); // Complex filtering
+productSchema.index({ createdAt: -1 });
+productSchema.index({ updatedAt: -1 }); // For sorting by last update
 
 export default mongoose.model("Product", productSchema);
