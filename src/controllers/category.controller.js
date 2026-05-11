@@ -1,7 +1,7 @@
 import Category from '../models/category.model.js';
 import Product from '../models/product.model.js';
 import { successResponse, errorResponse } from '../utils/response.js';
-import { paginate } from '../utils/pagination.util.js';
+import { paginate, parsePaginationParams, parseSortParams, createPaginationMeta } from '../utils/pagination.util.js';
 import logger from '../utils/logger.util.js';
 import mongoose from 'mongoose';
 
@@ -11,9 +11,11 @@ const validateObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
+export { generateSlug };
+
 const validateCategoryData = (data, isUpdate = false) => {
   const errors = [];
-  
+
   if (!isUpdate || data.name !== undefined) {
     if (!data.name?.trim()) {
       errors.push('Tên danh mục là bắt buộc');
@@ -21,11 +23,11 @@ const validateCategoryData = (data, isUpdate = false) => {
       errors.push('Tên danh mục không được vượt quá 100 ký tự');
     }
   }
-  
+
   if (data.description !== undefined && data.description?.length > 500) {
     errors.push('Mô tả không được vượt quá 500 ký tự');
   }
-  
+
   return errors;
 };
 
@@ -37,6 +39,96 @@ const generateSlug = (name) => {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+};
+
+const removeVietnameseDiacritics = (text) => {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, d => d === 'đ' ? 'd' : 'D');
+};
+
+const createSearchRegex = (searchTerm) => {
+  if (!searchTerm) return null;
+
+  const cleanedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const termWithoutDiacritics = removeVietnameseDiacritics(cleanedTerm);
+
+  // Tạo regex tìm kiếm cả có dấu và không dấu
+  const patterns = [
+    cleanedTerm,           // Tìm kiếm có dấu
+    termWithoutDiacritics  // Tìm kiếm không dấu
+  ];
+
+  return new RegExp(patterns.join('|'), 'gi');
+};
+
+const createAdvancedSearchQuery = (searchTerm) => {
+  if (!searchTerm) return null;
+
+  const cleanedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const termWithoutDiacritics = removeVietnameseDiacritics(cleanedTerm);
+
+  // Tạo regex tìm kiếm cả có dấu và không dấu
+  const searchRegex = new RegExp(cleanedTerm, 'gi');
+  const searchRegexNoDiacritics = new RegExp(termWithoutDiacritics, 'gi');
+
+  // Tạo query tìm kiếm cả có dấu và không dấu
+  return {
+    $or: [
+      { name: searchRegex },
+      { description: searchRegex },
+      { nameNoDiacritics: searchRegexNoDiacritics },
+      { descriptionNoDiacritics: searchRegexNoDiacritics }
+    ]
+  };
+};
+
+const createDiacriticFields = () => {
+  return {
+    $addFields: {
+      nameNoDiacritics: {
+        $let: {
+          vars: {
+            normalized: { $toLower: { $trim: { input: "$name" } } }
+          },
+          in: {
+            $replaceAll: {
+              input: {
+                $replaceAll: {
+                  input: "$$normalized",
+                  find: /[\u0300-\u036f]/g,
+                  replacement: ""
+                }
+              },
+              find: "đ",
+              replacement: "d"
+            }
+          }
+        }
+      },
+      descriptionNoDiacritics: {
+        $let: {
+          vars: {
+            normalized: { $toLower: { $trim: { input: { $ifNull: ["$description", ""] } } } }
+          },
+          in: {
+            $replaceAll: {
+              input: {
+                $replaceAll: {
+                  input: "$$normalized",
+                  find: /[\u0300-\u036f]/g,
+                  replacement: ""
+                }
+              },
+              find: "đ",
+              replacement: "d"
+            }
+          }
+        }
+      }
+    }
+  };
 };
 
 // ===== CRUD OPERATIONS =====
@@ -79,7 +171,7 @@ export const createCategory = async (req, res) => {
       if (!validateObjectId(parentId)) {
         return errorResponse(res, 'ID danh mục cha không hợp lệ', 400);
       }
-      
+
       const parentCategory = await Category.findById(parentId);
       if (!parentCategory) {
         return errorResponse(res, 'Danh mục cha không tồn tại', 404);
@@ -112,11 +204,11 @@ export const createCategory = async (req, res) => {
       stack: error.stack,
       body: req.body
     });
-    
+
     if (error.code === 11000) {
       return errorResponse(res, 'Danh mục đã tồn tại', 409);
     }
-    
+
     return errorResponse(res, 'Không thể tạo danh mục', 500);
   }
 };
@@ -131,15 +223,15 @@ export const createCategory = async (req, res) => {
 export const getCategories = async (req, res) => {
   try {
     const query = req.sanitizedQuery || req.query;
-    
+
     // Build base query
     let baseQuery = {};
-    
+
     // Handle filters
     if (query.isActive !== undefined) {
       baseQuery.isActive = query.isActive === 'true';
     }
-    
+
     if (query.parentId !== undefined) {
       if (query.parentId === 'null') {
         baseQuery.parentId = null;
@@ -148,14 +240,72 @@ export const getCategories = async (req, res) => {
       }
     }
 
+    // Xử lý tìm kiếm có dấu và không dấu
+    if (query.search) {
+      // Tạo regex tìm kiếm có dấu và không dấu
+      const cleanedTerm = query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const termWithoutDiacritics = removeVietnameseDiacritics(cleanedTerm);
+
+      // Tạo query tìm kiếm cả có dấu và không dấu
+      const searchQuery = {
+        $or: [
+          { name: { $regex: new RegExp(cleanedTerm, 'gi') } },
+          { name: { $regex: new RegExp(termWithoutDiacritics, 'gi') } },
+          // { description: { $regex: new RegExp(cleanedTerm, 'gi') } },
+          // { description: { $regex: new RegExp(termWithoutDiacritics, 'gi') } }
+        ]
+      };
+
+      // Kết hợp query cơ bản và query tìm kiếm
+      const finalQuery = { ...baseQuery, ...searchQuery };
+
+      // Sử dụng pagination utility thông thường với custom query
+      const result = await paginate(req, Category, {
+        defaultPage: 1,
+        defaultLimit: 10,
+        maxLimit: 10,
+        allowedSortFields: ['name', 'slug', 'createdAt', 'updatedAt', 'sortOrder'],
+        defaultSortField: 'sortOrder',
+        defaultSortOrder: 'asc',
+        searchFields: [], // Không dùng searchFields mặc định
+        searchMaxLength: 100,
+        lean: true,
+        baseQuery: finalQuery,
+        populate: [
+          {
+            path: 'parentId',
+            select: 'name slug',
+            match: { isActive: true }
+          }
+        ]
+      });
+
+      logger.info('Danh mục đã được lấy thành công', {
+        totalCategories: result.pagination.totalItems,
+        page: result.pagination.currentPage,
+        limit: result.pagination.itemsPerPage,
+        search: query.search || 'none',
+        filters: {
+          isActive: query.isActive || 'all',
+          parentId: query.parentId || 'all'
+        }
+      });
+
+      return successResponse(res, 'Lấy danh mục thành công', {
+        categories: result.data,
+        pagination: result.pagination
+      });
+    }
+
+    // Nếu không có tìm kiếm, sử dụng pagination thông thường
     const result = await paginate(req, Category, {
       defaultPage: 1,
-      defaultLimit: 20,
-      maxLimit: 100,
+      defaultLimit: 10,
+      maxLimit: 10,
       allowedSortFields: ['name', 'slug', 'createdAt', 'updatedAt', 'sortOrder'],
       defaultSortField: 'sortOrder',
       defaultSortOrder: 'asc',
-      searchFields: ['name', 'description'],
+      searchFields: [],
       searchMaxLength: 100,
       lean: true,
       baseQuery,
@@ -277,12 +427,12 @@ export const updateCategory = async (req, res) => {
         if (!validateObjectId(updateData.parentId)) {
           return errorResponse(res, 'ID danh mục cha không hợp lệ', 400);
         }
-        
+
         // Prevent circular reference
         if (updateData.parentId === id) {
           return errorResponse(res, 'Danh mục không thể là con của chính nó', 400);
         }
-        
+
         const parentCategory = await Category.findById(updateData.parentId);
         if (!parentCategory) {
           return errorResponse(res, 'Danh mục cha không tồn tại', 404);
@@ -295,13 +445,13 @@ export const updateCategory = async (req, res) => {
     // Update slug if name is changed
     if (updateData.name && updateData.name.trim() !== existingCategory.name) {
       updateData.slug = generateSlug(updateData.name.trim());
-      
+
       // Check if new slug already exists
-      const existingSlug = await Category.findOne({ 
+      const existingSlug = await Category.findOne({
         slug: updateData.slug,
         _id: { $ne: id }
       });
-      
+
       if (existingSlug) {
         return errorResponse(res, 'Slug đã tồn tại', 409);
       }
@@ -328,8 +478,8 @@ export const updateCategory = async (req, res) => {
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
       finalUpdateData,
-      { 
-        new: true, 
+      {
+        returnDocument: 'after',
         runValidators: true,
         populate: [
           { path: 'parentId', select: 'name slug' },
@@ -354,11 +504,11 @@ export const updateCategory = async (req, res) => {
       categoryId: req.params.id,
       body: req.body
     });
-    
+
     if (error.code === 11000) {
       return errorResponse(res, 'Danh mục đã tồn tại', 409);
     }
-    
+
     return errorResponse(res, 'Không thể cập nhật danh mục', 500);
   }
 };
@@ -386,14 +536,14 @@ export const deleteCategory = async (req, res) => {
     // Kiểm tra các ràng buộc trước khi xóa
     const [childrenCount, productsCount] = await Promise.all([
       // Kiểm tra danh mục con đang hoạt động
-      Category.countDocuments({ 
-        parentId: id, 
-        isActive: true 
+      Category.countDocuments({
+        parentId: id,
+        isActive: true
       }),
       // Kiểm tra sản phẩm thuộc danh mục này
-      Product.countDocuments({ 
-        categoryId: id, 
-        isActive: true 
+      Product.countDocuments({
+        categoryId: id,
+        isActive: true
       })
     ]);
 
@@ -411,7 +561,7 @@ export const deleteCategory = async (req, res) => {
     const deletedCategory = await Category.findByIdAndUpdate(
       id,
       { isActive: false },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     // Cũng vô hiệu hóa tất cả sản phẩm trong danh mục này
@@ -517,14 +667,14 @@ export const hardDeleteCategory = async (req, res) => {
  * @returns {Promise<Object>} - Thông tin về các ràng buộc
  */
 const checkCategoryConstraints = async (categoryId, includeInactive = false) => {
-  const categoryQuery = includeInactive ? { parentId: categoryId } : { 
-    parentId: categoryId, 
-    isActive: true 
+  const categoryQuery = includeInactive ? { parentId: categoryId } : {
+    parentId: categoryId,
+    isActive: true
   };
-  
-  const productQuery = includeInactive ? { categoryId } : { 
-    categoryId, 
-    isActive: true 
+
+  const productQuery = includeInactive ? { categoryId } : {
+    categoryId,
+    isActive: true
   };
 
   const [childrenCount, productsCount, children, products] = await Promise.all([
@@ -682,9 +832,9 @@ export const getCategoryStats = async (req, res) => {
 export const getCategoryTree = async (req, res) => {
   try {
     const { includeInactive = false } = req.query;
-    
+
     const matchCondition = includeInactive === 'true' ? {} : { isActive: true };
-    
+
     const categories = await Category.find(matchCondition)
       .populate('parentId', 'name slug')
       .sort({ sortOrder: 1, name: 1 });
@@ -748,7 +898,7 @@ export const restoreCategory = async (req, res) => {
     const restoredCategory = await Category.findByIdAndUpdate(
       id,
       { isActive: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     logger.info('Danh mục đã được khôi phục thành công', {
