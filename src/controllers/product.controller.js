@@ -11,109 +11,288 @@ import logger from '../utils/logger.util.js';
  */
 export const createProduct = async (req, res) => {
   try {
-    const { name, categoryId, brand, description, image, variants } = req.body;
+    const { name, categoryId, brand, description, image, variants, price, stock, barcode } = req.body;
 
-    // Kiểm tra các trường bắt buộc
-    if (!name || !categoryId) {
-      return errorResponse(res, "Tên sản phẩm và danh mục là bắt buộc");
+    // === VALIDATION ===
+    const validationError = validateProductInput({ name, categoryId, variants, price, stock, barcode });
+    if (validationError) {
+      return errorResponse(res, validationError);
     }
 
-    // Kiểm tra định dạng ObjectId
-    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
-      return errorResponse(res, "Định dạng danh mục không hợp lệ");
-    }
+    let result;
 
-    // Kiểm tra variants
-    if (!variants || !Array.isArray(variants) || variants.length === 0) {
-      return errorResponse(res, "Phải có ít nhất một biến thể sản phẩm");
-    }
+    // === CREATE PRODUCT (WITH OR WITHOUT VARIANTS) ===
+    if (variants && variants.length > 0) {
+      // Check duplicate barcodes only if variants exist
+      const duplicateError = await checkDuplicateBarcodes(variants);
+      if (duplicateError) {
+        return errorResponse(res, duplicateError);
+      }
 
-    // Validate variants
-    for (const variant of variants) {
-      if (!variant.barcode || !variant.price) {
-        return errorResponse(res, "Mỗi biến thể phải có mã vạch và giá");
+      // Create product with variants
+      result = await createProductWithVariants({
+        name,
+        categoryId,
+        brand,
+        description,
+        image,
+        variants
+      });
+
+      logger.info(`Sản phẩm được tạo: ${result.product._id} với ${result.variants.length} variants`);
+    } else {
+      // Create product with auto default variant if price/barcode provided
+      result = await createProductOnly({
+        name,
+        categoryId,
+        brand,
+        description,
+        image,
+        price,
+        stock,
+        barcode
+      });
+
+      if (result.variants.length > 0) {
+        logger.info(`Sản phẩm được tạo với default variant: ${result.product._id}`);
+      } else {
+        logger.info(`Sản phẩm được tạo (không có biến thể): ${result.product._id}`);
       }
     }
 
-    // Kiểm tra barcode đã tồn tại chưa
-    const barcodes = variants.map(v => v.barcode);
-    const existingVariants = await ProductVariant.find({ 
-      barcode: { $in: barcodes },
-      isActive: true 
-    });
-    
-    if (existingVariants.length > 0) {
-      const existingBarcodes = existingVariants.map(v => v.barcode);
-      return errorResponse(res, `Mã vạch đã tồn tại: ${existingBarcodes.join(', ')}`);
+    return successResponse(res, "Tạo sản phẩm thành công", result);
+
+  } catch (error) {
+    logger.error(`Lỗi khi tạo sản phẩm: ${error.message}`);
+
+    // Handle specific error types
+    if (error.name === 'ValidationError') {
+      return errorResponse(res, "Dữ liệu không hợp lệ", error.message);
     }
 
-    // Tạo sản phẩm
-    const product = await Product.create({
-      name,
-      categoryId,
-      brand: brand || "",
-      description: description || "",
-      image: image || "",
-      isActive: true
-    });
-
-    // Tạo variants
-
-    let productVariants;
-    try {
-      productVariants = await Promise.all(
-        variants.map(variant => 
-          ProductVariant.create({
-            productId: product._id,
-            name: variant.name || name,
-            barcode: variant.barcode,
-            sku: variant.sku,
-            price: variant.price,
-            costPrice: variant.costPrice || 0,
-            stock: variant.stock || 0,
-            unit: variant.unit || "piece",
-            conversionValue: variant.conversionValue || 1,
-            attributes: variant.attributes || {},
-            isActive: true
-          })
-        )
-      );
-    } catch (error) {
-      logger.error(`Lỗi khi tạo biến thể sản phẩm: ${error.message}`);
-      return errorResponse(res, "Không thể tạo biến thể sản phẩm", error.message);
+    if (error.code === 11000) {
+      return errorResponse(res, "Trùng lặp dữ liệu", "Mã vạch hoặc SKU đã tồn tại");
     }
 
-    // const productVariants = await Promise.all(
-    //   variants.map(variant => 
-    //     ProductVariant.create({
-    //       productId: product._id,
-    //       name: variant.name || name,
-    //       barcode: variant.barcode,
-    //       sku: variant.sku,
-    //       price: variant.price,
-    //       costPrice: variant.costPrice || 0,
-    //       stock: variant.stock || 0,
-    //       unit: variant.unit || "piece",
-    //       conversionValue: variant.conversionValue || 1,
-    //       attributes: variant.attributes || {},
-    //       isActive: true
-    //     })
-    //   )
-    // );
+    return errorResponse(res, "Không thể tạo sản phẩm", error.message);
+  }
+};
 
-    // Populate và trả về kết quả
-    const newProduct = await Product.findById(product._id)
+/**
+ * Validate product input data
+ */
+const validateProductInput = ({ name, categoryId, variants, price, stock, barcode }) => {
+  // Validate required fields
+  if (!name?.trim()) {
+    return "Tên sản phẩm là bắt buộc";
+  }
+
+  if (!categoryId) {
+    return "Danh mục là bắt buộc";
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+    return "Định dạng danh mục không hợp lệ";
+  }
+
+  // Validate variants (optional now)
+  if (variants !== undefined && variants !== null) {
+    if (!Array.isArray(variants)) {
+      return "Biến thể phải là một mảng";
+    }
+
+    if (variants.length > 0) {
+      // Validate each variant only if variants are provided
+      for (let i = 0; i < variants.length; i++) {
+        const variant = variants[i];
+        const variantErrors = [];
+
+        if (!variant.barcode?.trim()) {
+          variantErrors.push("mã vạch");
+        }
+
+        if (typeof variant.price !== 'number' || variant.price < 0) {
+          variantErrors.push("giá hợp lệ");
+        }
+
+        if (variantErrors.length > 0) {
+          return `Biến thể ${i + 1}: Thiếu ${variantErrors.join(', ')}`;
+        }
+
+        // Validate optional numeric fields
+        if (variant.costPrice !== undefined && (typeof variant.costPrice !== 'number' || variant.costPrice < 0)) {
+          return `Biến thể ${i + 1}: Giá vốn phải là số không âm`;
+        }
+
+        if (variant.stock !== undefined && (typeof variant.stock !== 'number' || variant.stock < 0)) {
+          return `Biến thể ${i + 1}: Tồn kho phải là số không âm`;
+        }
+      }
+    }
+  }
+
+  // Validate direct price/stock/barcode for products without variants
+  if (!variants || variants.length === 0) {
+    if (price !== undefined) {
+      if (typeof price !== 'number' || price < 0) {
+        return "Giá phải là số không âm";
+      }
+    }
+
+    if (stock !== undefined) {
+      if (typeof stock !== 'number' || stock < 0) {
+        return "Số lượng phải là số không âm";
+      }
+    }
+
+    if (barcode !== undefined) {
+      if (!barcode?.trim()) {
+        return "Mã vạch không được để trống";
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Check for duplicate barcodes in the system
+ */
+const checkDuplicateBarcodes = async (variants) => {
+  const barcodes = variants.map(v => v.barcode.trim()).filter(Boolean);
+
+  if (barcodes.length === 0) {
+    return null;
+  }
+
+  // Check for duplicates within the request
+  const duplicateInRequest = barcodes.filter((barcode, index) => barcodes.indexOf(barcode) !== index);
+  if (duplicateInRequest.length > 0) {
+    return `Mã vạch trùng lặp trong request: ${[...new Set(duplicateInRequest)].join(', ')}`;
+  }
+
+  // Check for duplicates in database
+  const existingVariants = await ProductVariant.find({
+    barcode: { $in: barcodes },
+    isActive: true
+  }).select('barcode').lean();
+
+  if (existingVariants.length > 0) {
+    const existingBarcodes = existingVariants.map(v => v.barcode);
+    return `Mã vạch đã tồn tại: ${existingBarcodes.join(', ')}`;
+  }
+
+  return null;
+};
+
+/**
+ * Create product only (without variants) - with auto default variant creation
+ */
+const createProductOnly = async ({ name, categoryId, brand, description, image, price, stock, barcode }) => {
+  // Create product
+  const product = await Product.create({
+    name: name.trim(),
+    categoryId,
+    brand: brand?.trim() || "",
+    description: description?.trim() || "",
+    image: image?.trim() || "",
+    isActive: true
+  });
+
+  try {
+    // Auto create default variant if sufficient data provided
+    if (price && barcode) {
+      const defaultVariant = await ProductVariant.create({
+        productId: product._id,
+        name: name.trim(),
+        barcode: barcode.trim(),
+        sku: null,
+        price: Number(price),
+        costPrice: 0,
+        stock: stock !== undefined ? Number(stock) : 0,
+        unit: "piece",
+        conversionValue: 1,
+        attributes: {},
+        isActive: true
+      });
+
+      // Get populated product data
+      const populatedProduct = await Product.findById(product._id)
+        .populate("categoryId", "name")
+        .lean();
+
+      return {
+        product: populatedProduct,
+        variants: [defaultVariant]
+      };
+    } else {
+      // Return product without variants if insufficient data
+      const populatedProduct = await Product.findById(product._id)
+        .populate("categoryId", "name")
+        .lean();
+
+      return {
+        product: populatedProduct,
+        variants: []
+      };
+    }
+  } catch (variantError) {
+    // Clean up product if variant creation fails
+    logger.error(`Lỗi khi tạo default variant, đang xóa sản phẩm: ${product._id}`);
+    await Product.findByIdAndDelete(product._id);
+    throw variantError;
+  }
+};
+
+/**
+ * Create product and variants in a transaction-like manner
+ */
+const createProductWithVariants = async ({ name, categoryId, brand, description, image, variants }) => {
+  // Create product first
+  const product = await Product.create({
+    name: name.trim(),
+    categoryId,
+    brand: brand?.trim() || "",
+    description: description?.trim() || "",
+    image: image?.trim() || "",
+    isActive: true
+  });
+
+  try {
+    // Create all variants in parallel
+    const productVariants = await Promise.all(
+      variants.map(variant =>
+        ProductVariant.create({
+          productId: product._id,
+          name: variant.name?.trim() || name.trim(),
+          barcode: variant.barcode.trim(),
+          sku: variant.sku?.trim(),
+          price: Number(variant.price),
+          costPrice: variant.costPrice !== undefined ? Number(variant.costPrice) : 0,
+          stock: variant.stock !== undefined ? Number(variant.stock) : 0,
+          unit: variant.unit?.trim() || "piece",
+          conversionValue: variant.conversionValue !== undefined ? Number(variant.conversionValue) : 1,
+          attributes: variant.attributes || {},
+          isActive: true
+        })
+      )
+    );
+
+    // Get populated product data
+    const populatedProduct = await Product.findById(product._id)
       .populate("categoryId", "name")
       .lean();
 
-    logger.info(`Sản phẩm được tạo: ${product._id} với ${productVariants.length} variants`);
-    return successResponse(res, "Tạo sản phẩm thành công", {
-      product: newProduct,
+    return {
+      product: populatedProduct,
       variants: productVariants
-    });
-  } catch (error) {
-    logger.error(`Lỗi khi tạo sản phẩm: ${error.message}`);
-    return errorResponse(res, "Không thể tạo sản phẩm", error.message);
+    };
+
+  } catch (variantError) {
+    // If variant creation fails, clean up product
+    logger.error(`Lỗi khi tạo biến thể, đang xóa sản phẩm: ${product._id}`);
+    await Product.findByIdAndDelete(product._id);
+    throw variantError;
   }
 };
 
@@ -124,6 +303,7 @@ export const createProduct = async (req, res) => {
  */
 export const getProducts = async (req, res) => {
   try {
+    // Lấy danh sách sản phẩm với pagination
     const result = await paginate(req, Product, {
       defaultPage: 1,
       defaultLimit: 10,
@@ -143,23 +323,30 @@ export const getProducts = async (req, res) => {
       baseQuery: {}
     });
 
-    // Get variants for each product
-    const productsWithVariants = await Promise.all(
-      result.data.map(async (product) => {
-        const variants = await ProductVariant.find({ 
-          productId: product._id, 
-          isActive: true 
-        }).select('name barcode sku price stock unit attributes').lean();
-        
-        return {
-          ...product,
-          variants
-        };
-      })
-    );
+    // Lấy variants cho tất cả sản phẩm trong một query duy nhất để tối ưu performance
+    const productIds = result.data.map(product => product._id);
+    const variants = await ProductVariant.find({
+      productId: { $in: productIds },
+      isActive: true
+    }).select('productId name barcode sku price stock unit attributes').lean();
+
+    // Group variants by productId
+    const variantsByProduct = variants.reduce((acc, variant) => {
+      if (!acc[variant.productId]) {
+        acc[variant.productId] = [];
+      }
+      acc[variant.productId].push(variant);
+      return acc;
+    }, {});
+
+    // Kết hợp sản phẩm với variants
+    const productsWithVariants = result.data.map(product => ({
+      ...product,
+      variants: variantsByProduct[product._id] || []
+    }));
 
     logger.info(`Lấy ${productsWithVariants.length} sản phẩm (trang ${result.pagination.currentPage})`);
-    
+
     return successResponse(res, "Lấy danh sách sản phẩm thành công", {
       products: productsWithVariants,
       pagination: result.pagination
@@ -192,9 +379,9 @@ export const getProductById = async (req, res) => {
     }
 
     // Get variants
-    const variants = await ProductVariant.find({ 
-      productId: id, 
-      isActive: true 
+    const variants = await ProductVariant.find({
+      productId: id,
+      isActive: true
     }).lean();
 
     logger.info(`Lấy sản phẩm: ${id} với ${variants.length} variants`);
@@ -237,9 +424,9 @@ export const getProductByBarcode = async (req, res) => {
     }
 
     // Get all variants of this product
-    const allVariants = await ProductVariant.find({ 
-      productId: variant.productId._id, 
-      isActive: true 
+    const allVariants = await ProductVariant.find({
+      productId: variant.productId._id,
+      isActive: true
     }).lean();
 
     logger.info(`Lấy sản phẩm theo mã vạch: ${barcode}`);
@@ -281,7 +468,7 @@ export const updateProduct = async (req, res) => {
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
       { ...req.body, updatedAt: new Date() },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     ).populate("categoryId", "name");
 
     logger.info(`Sản phẩm được cập nhật: ${id}`);
@@ -311,11 +498,11 @@ export const deleteProduct = async (req, res) => {
     }
 
     // Kiểm tra xem sản phẩm có variants nào không
-    const variants = await ProductVariant.find({ 
-      productId: id, 
-      isActive: true 
+    const variants = await ProductVariant.find({
+      productId: id,
+      isActive: true
     });
-    
+
     if (variants.length > 0) {
       return errorResponse(res, 400, `Không thể xóa sản phẩm có ${variants.length} biến thể đang hoạt động. Vui lòng xóa tất cả biến thể trước.`);
     }
@@ -381,7 +568,7 @@ export const restoreProduct = async (req, res) => {
     }
 
     // Khôi phục sản phẩm và variants
-    await Product.findByIdAndUpdate(id, { 
+    await Product.findByIdAndUpdate(id, {
       isActive: true,
       updatedAt: new Date()
     });
@@ -427,11 +614,11 @@ export const addProductVariant = async (req, res) => {
     }
 
     // Kiểm tra barcode đã tồn tại chưa
-    const existingVariant = await ProductVariant.findOne({ 
+    const existingVariant = await ProductVariant.findOne({
       barcode: variantData.barcode,
-      isActive: true 
+      isActive: true
     });
-    
+
     if (existingVariant) {
       return errorResponse(res, 400, "Mã vạch đã tồn tại");
     }
@@ -472,19 +659,19 @@ export const updateProductVariant = async (req, res) => {
     }
 
     // Kiểm tra variant tồn tại và thuộc sản phẩm
-    const variant = await ProductVariant.findOne({ 
-      _id: variantId, 
-      productId: productId 
+    const variant = await ProductVariant.findOne({
+      _id: variantId,
+      productId: productId
     });
-    
+
     if (!variant) {
       return errorResponse(res, 404, "Không tìm thấy biến thể");
     }
 
     // Nếu cập nhật barcode, kiểm tra trùng lặp
     if (req.body.barcode && req.body.barcode !== variant.barcode) {
-      const duplicateBarcode = await ProductVariant.findOne({ 
-        barcode: req.body.barcode, 
+      const duplicateBarcode = await ProductVariant.findOne({
+        barcode: req.body.barcode,
         isActive: true,
         _id: { $ne: variantId }
       });
@@ -496,7 +683,7 @@ export const updateProductVariant = async (req, res) => {
     const updatedVariant = await ProductVariant.findByIdAndUpdate(
       variantId,
       { ...req.body, updatedAt: new Date() },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     logger.info(`Variant được cập nhật: ${variantId}`);
@@ -524,11 +711,11 @@ export const updateVariantStock = async (req, res) => {
       return errorResponse(res, 400, "Giá trị tồn kho là bắt buộc");
     }
 
-    const variant = await ProductVariant.findOne({ 
-      _id: variantId, 
-      productId: productId 
+    const variant = await ProductVariant.findOne({
+      _id: variantId,
+      productId: productId
     });
-    
+
     if (!variant) {
       return errorResponse(res, 404, "Không tìm thấy biến thể");
     }
@@ -550,7 +737,7 @@ export const updateVariantStock = async (req, res) => {
     const updatedVariant = await ProductVariant.findByIdAndUpdate(
       variantId,
       { stock: newStock },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     logger.info(`Tồn kho variant được cập nhật: ${variantId}, tồn kho mới: ${newStock}`);
@@ -573,11 +760,11 @@ export const deleteProductVariant = async (req, res) => {
       return errorResponse(res, 400, "Định dạng ID không hợp lệ");
     }
 
-    const variant = await ProductVariant.findOne({ 
-      _id: variantId, 
-      productId: productId 
+    const variant = await ProductVariant.findOne({
+      _id: variantId,
+      productId: productId
     });
-    
+
     if (!variant) {
       return errorResponse(res, 404, "Không tìm thấy biến thể");
     }
