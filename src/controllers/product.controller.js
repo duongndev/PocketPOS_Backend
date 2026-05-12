@@ -11,10 +11,10 @@ import logger from '../utils/logger.util.js';
  */
 export const createProduct = async (req, res) => {
   try {
-    const { name, categoryId, brand, description, image, variants, price, stock, barcode } = req.body;
+    const { name, categoryId, brand, description, image, variants, price, costPrice, stock, barcode } = req.body;
 
     // === VALIDATION ===
-    const validationError = validateProductInput({ name, categoryId, variants, price, stock, barcode });
+    const validationError = validateProductInput({ name, categoryId, variants, price, costPrice, stock, barcode });
     if (validationError) {
       return errorResponse(res, validationError);
     }
@@ -49,6 +49,7 @@ export const createProduct = async (req, res) => {
         description,
         image,
         price,
+        costPrice,
         stock,
         barcode
       });
@@ -81,7 +82,7 @@ export const createProduct = async (req, res) => {
 /**
  * Validate product input data
  */
-const validateProductInput = ({ name, categoryId, variants, price, stock, barcode }) => {
+const validateProductInput = ({ name, categoryId, variants, price, costPrice, stock, barcode }) => {
   // Validate required fields
   if (!name?.trim()) {
     return "Tên sản phẩm là bắt buộc";
@@ -139,6 +140,12 @@ const validateProductInput = ({ name, categoryId, variants, price, stock, barcod
       }
     }
 
+    if (costPrice !== undefined) {
+      if (typeof costPrice !== 'number' || costPrice < 0) {
+        return "Giá vốn phải là số không âm";
+      }
+    }
+
     if (stock !== undefined) {
       if (typeof stock !== 'number' || stock < 0) {
         return "Số lượng phải là số không âm";
@@ -188,7 +195,7 @@ const checkDuplicateBarcodes = async (variants) => {
 /**
  * Create product only (without variants) - with auto default variant creation
  */
-const createProductOnly = async ({ name, categoryId, brand, description, image, price, stock, barcode }) => {
+const createProductOnly = async ({ name, categoryId, brand, description, image, price, costPrice, stock, barcode }) => {
   // Create product
   const product = await Product.create({
     name: name.trim(),
@@ -208,7 +215,7 @@ const createProductOnly = async ({ name, categoryId, brand, description, image, 
         barcode: barcode.trim(),
         sku: null,
         price: Number(price),
-        costPrice: 0,
+        costPrice: costPrice !== undefined ? Number(costPrice) : 0,
         stock: stock !== undefined ? Number(stock) : 0,
         unit: "piece",
         conversionValue: 1,
@@ -328,7 +335,7 @@ export const getProducts = async (req, res) => {
     const variants = await ProductVariant.find({
       productId: { $in: productIds },
       isActive: true
-    }).select('productId name barcode sku price stock unit attributes').lean();
+    }).select('productId name barcode sku price costPrice stock unit attributes isActive').lean();
 
     // Group variants by productId
     const variantsByProduct = variants.reduce((acc, variant) => {
@@ -357,6 +364,68 @@ export const getProducts = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Lấy danh sách tất cả sản phẩm biến thể (với bộ lọc, phân trang)
+ * @route   GET /api/products/variants/all
+ */
+export const getAllVariants = async (req, res) => {
+  try {
+    const result = await paginate(req, ProductVariant, {
+      defaultPage: 1,
+      defaultLimit: 10,
+      maxPage: 1000,
+      maxLimit: 100,
+      allowedSortFields: ['name', 'price', 'stock', 'createdAt', 'updatedAt'],
+      defaultSortField: 'createdAt',
+      defaultSortOrder: 'desc',
+      searchFields: ['name', 'sku', 'barcode'],
+      searchMaxLength: 100,
+      booleanFilters: {
+        isActive: true
+      },
+      exactFilters: ['productId'],
+      populate: { path: 'productId', select: 'name categoryId brand image' },
+      lean: true,
+      baseQuery: {}
+    });
+
+    logger.info(`Lấy ${result.data.length} biến thể (trang ${result.pagination.currentPage})`);
+
+    return successResponse(res, "Lấy danh sách biến thể thành công", {
+      variants: result.data,
+      pagination: result.pagination
+    });
+  } catch (error) {
+    logger.error(`Lỗi khi lấy danh sách biến thể: ${error.message}`);
+    return errorResponse(res, "Không thể lấy danh sách biến thể", 500, error.message);
+  }
+};
+
+/**
+ * @desc    Lấy danh sách biến thể của một sản phẩm
+ * @route   GET /api/products/:id/variants
+ */
+export const getProductVariants = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return errorResponse(res, "Định dạng ID sản phẩm không hợp lệ", 400);
+    }
+
+    const variants = await ProductVariant.find({
+      productId: id,
+      isActive: true
+    }).lean();
+
+    logger.info(`Lấy danh sách biến thể của sản phẩm: ${id}`);
+    return successResponse(res, "Lấy danh sách biến thể thành công", variants);
+  } catch (error) {
+    logger.error(`Lỗi khi lấy danh sách biến thể: ${error.message}`);
+    return errorResponse(res, "Không thể lấy danh sách biến thể", 500, error.message);
+  }
+};
+
 
 /**
  * @desc    Lấy sản phẩm theo ID
@@ -371,7 +440,7 @@ export const getProductById = async (req, res) => {
     }
 
     const product = await Product.findById(id)
-      .populate("categoryId", "name")
+      .populate("categoryId")
       .lean();
 
     if (!product) {

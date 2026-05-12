@@ -214,10 +214,10 @@ const PRODUCT_TEMPLATES = {
       brand: 'Nike',
       description: 'Giày thể thao Nike chất lượng',
       variants: [
-        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '40', color: 'đen', material: 'da tổng hợp' } },
-        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '41', color: 'trắng', material: 'da tổng hợp' } },
-        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '42', color: 'xanh', material: 'da tổng hợp' } },
-        { name: 'Nike Air Max 90', price: 2600000, attributes: { size: '43', color: 'đỏ', material: 'da thật' } }
+        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '40', color: '#000000', material: 'da tổng hợp' } },
+        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '41', color: '#FFFFFF', material: 'da tổng hợp' } },
+        { name: 'Nike Air Max 90', price: 2500000, attributes: { size: '42', color: '#0000FF', material: 'da tổng hợp' } },
+        { name: 'Nike Air Max 90', price: 2600000, attributes: { size: '43', color: '#FF0000', material: 'da thật' } }
       ]
     },
     {
@@ -225,10 +225,10 @@ const PRODUCT_TEMPLATES = {
       brand: 'Adidas',
       description: 'Giày chạy bộ Adidas',
       variants: [
-        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '40', color: 'xám', technology: 'boost' } },
-        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '41', color: 'đen', technology: 'boost' } },
-        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '42', color: 'trắng', technology: 'boost' } },
-        { name: 'Ultraboost 22', price: 3500000, attributes: { size: '43', color: 'xanh', technology: 'boost 2.0' } }
+        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '40', color: '#808080', technology: 'boost' } },
+        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '41', color: '#000000', technology: 'boost' } },
+        { name: 'Ultraboost 21', price: 3200000, attributes: { size: '42', color: '#FFFFFF', technology: 'boost' } },
+        { name: 'Ultraboost 22', price: 3500000, attributes: { size: '43', color: '#0000FF', technology: 'boost 2.0' } }
       ]
     }
   ],
@@ -238,10 +238,10 @@ const PRODUCT_TEMPLATES = {
       brand: 'Uniqlo',
       description: 'Áo thun cotton chất lượng cao',
       variants: [
-        { name: 'Áo thun trắng', price: 250000, attributes: { size: 'S', color: 'trắng', material: 'cotton 100%' } },
-        { name: 'Áo thun đen', price: 250000, attributes: { size: 'M', color: 'đen', material: 'cotton 100%' } },
-        { name: 'Áo thun xanh', price: 250000, attributes: { size: 'L', color: 'xanh', material: 'cotton 100%' } },
-        { name: 'Áo thun XL', price: 280000, attributes: { size: 'XL', color: 'đỏ', material: 'cotton organic' } }
+        { name: 'Áo thun trắng', price: 250000, attributes: { size: 'S', color: '#FFFFFF', material: 'cotton 100%' } },
+        { name: 'Áo thun đen', price: 250000, attributes: { size: 'M', color: '#000000', material: 'cotton 100%' } },
+        { name: 'Áo thun xanh', price: 250000, attributes: { size: 'L', color: '#0000FF', material: 'cotton 100%' } },
+        { name: 'Áo thun XL', price: 280000, attributes: { size: 'XL', color: '#FF0000', material: 'cotton organic' } }
       ]
     }
   ],
@@ -251,10 +251,10 @@ const PRODUCT_TEMPLATES = {
       brand: 'Apple',
       description: 'iPhone 15 mới nhất',
       variants: [
-        { name: 'iPhone 15 128GB', price: 21990000, attributes: { storage: '128GB', color: 'đen', network: '5G' } },
-        { name: 'iPhone 15 256GB', price: 24990000, attributes: { storage: '256GB', color: 'trắng', network: '5G' } },
-        { name: 'iPhone 15 512GB', price: 28990000, attributes: { storage: '512GB', color: 'xanh', network: '5G' } },
-        { name: 'iPhone 15 Pro', price: 32990000, attributes: { storage: '256GB', color: 'titan', network: '5G' } }
+        { name: 'iPhone 15 128GB', price: 21990000, attributes: { storage: '128GB', color: '#000000', network: '5G' } },
+        { name: 'iPhone 15 256GB', price: 24990000, attributes: { storage: '256GB', color: '#FFFFFF', network: '5G' } },
+        { name: 'iPhone 15 512GB', price: 28990000, attributes: { storage: '512GB', color: '#0000FF', network: '5G' } },
+        { name: 'iPhone 15 Pro', price: 32990000, attributes: { storage: '256GB', color: '#878681', network: '5G' } }
       ]
     },
     {
@@ -262,9 +262,9 @@ const PRODUCT_TEMPLATES = {
       brand: 'Samsung',
       description: 'Samsung Galaxy S24',
       variants: [
-        { name: 'Galaxy S24', price: 20990000, attributes: { storage: '128GB', color: 'đen', screen: '6.2"' } },
-        { name: 'Galaxy S24+', price: 25990000, attributes: { storage: '256GB', color: 'trắng', screen: '6.7"' } },
-        { name: 'Galaxy S24 Ultra', price: 32990000, attributes: { storage: '512GB', color: 'xám', screen: '6.8"' } }
+        { name: 'Galaxy S24', price: 20990000, attributes: { storage: '128GB', color: '#000000', screen: '6.2"' } },
+        { name: 'Galaxy S24+', price: 25990000, attributes: { storage: '256GB', color: '#FFFFFF', screen: '6.7"' } },
+        { name: 'Galaxy S24 Ultra', price: 32990000, attributes: { storage: '512GB', color: '#808080', screen: '6.8"' } }
       ]
     }
   ],
@@ -437,7 +437,7 @@ const generateRandomAttributes = (category, existingAttributes = {}) => {
     const attr = missingAttributes[i];
     const values = {
       size: ['S', 'M', 'L', 'XL', 'XXL'],
-      color: ['đen', 'trắng', 'xanh', 'đỏ', 'vàng', 'xám', 'nâu', 'hồng'],
+      color: ['#000000', '#FFFFFF', '#0000FF', '#FF0000', '#FFFF00', '#808080', '#A52A2A', '#FFC0CB'], // mã màu
       type: ['basic', 'premium', 'deluxe', 'standard'],
       material: ['cotton', 'polyester', 'da', 'vải', 'nhựa'],
       style: ['cổ điển', 'hiện đại', 'thể thao', 'công sở']

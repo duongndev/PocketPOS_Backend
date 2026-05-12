@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
 import * as productCtrl from "../controllers/product.controller.js";
-import {validateProduct, validateProductUpdate, validateVariant, validateVariantStockUpdate, validateProductVariantIds, validateProductId} from "../middlewares/validation.middleware.js";
+import { validateProduct, validateProductUpdate, validateVariant, validateVariantStockUpdate, validateProductVariantIds, validateProductId } from "../middlewares/validation.middleware.js";
 import { generalRateLimit } from '../middlewares/rateLimiting.middleware.js';
 import { catchAsync } from '../middlewares/errorHandler.middleware.js';
 
@@ -22,6 +22,14 @@ router.post('/', validateProduct, catchAsync(productCtrl.createProduct));
  */
 router.get('/', catchAsync(productCtrl.getProducts));
 
+
+/**
+ * @desc    Lấy tất cả sản phẩm biến thể (với bộ lọc, tìm kiếm, phân trang)
+ * @route   GET /api/products/variants
+ * @access  Public
+ */
+router.get('/variants', catchAsync(productCtrl.getAllVariants));
+
 /**
  * @desc    Lấy sản phẩm theo ID
  * @route   GET /api/products/:id
@@ -30,11 +38,26 @@ router.get('/', catchAsync(productCtrl.getProducts));
 router.get('/:id', validateProductId, catchAsync(productCtrl.getProductById));
 
 /**
+ * @desc    Lấy danh sách biến thể của một sản phẩm
+ * @route   GET /api/products/:id/variants
+ * @access  Public
+ */
+router.get('/:id/variants', validateProductId, catchAsync(productCtrl.getProductVariants));
+
+/**
  * @desc    Lấy sản phẩm theo mã vạch
  * @route   GET /api/products/barcode/:barcode
  * @access  Public
  */
 router.get('/barcode/:barcode', catchAsync(productCtrl.getProductByBarcode));
+
+/**
+ * @desc    Lấy sản phẩm theo ID
+ * @route   GET /api/products/:id
+ * @access  Public
+ */
+router.get('/:id', validateProductId, catchAsync(productCtrl.getProductById));
+
 
 /**
  * @desc    Cập nhật sản phẩm
