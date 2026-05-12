@@ -43,10 +43,11 @@ export const validateProduct = [
   //   .isLength({ max: 500 })
   //   .withMessage("URL hình ảnh không được vượt quá 500 ký tự"),
 
-  // Validate variants array
+  // Validate variants array (optional)
   body("variants")
-    .isArray({ min: 1 })
-    .withMessage("Phải có ít nhất một biến thể sản phẩm"),
+    .optional()
+    .isArray()
+    .withMessage("Biến thể sản phẩm phải là một mảng"),
 
   // Validate each variant
   body("variants.*.name")
@@ -291,11 +292,7 @@ export const validateVariant = [
  * Middleware validate cập nhật tồn kho variant
  */
 export const validateVariantStockUpdate = [
-  param("productId")
-    .isMongoId()
-    .withMessage("ID sản phẩm không hợp lệ"),
-
-  param("variantId")
+  param("id")
     .isMongoId()
     .withMessage("ID biến thể không hợp lệ"),
 
@@ -327,7 +324,29 @@ export const validateVariantStockUpdate = [
 ];
 
 /**
- * Middleware validate ID sản phẩm và variant trong params
+ * Middleware validate ID biến thể trong params
+ */
+export const validateVariantId = [
+  param("id")
+    .isMongoId()
+    .withMessage("ID biến thể không hợp lệ"),
+
+  // Xử lý kết quả validation
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "ID biến thể không hợp lệ",
+        errors: errors.array().map(error => error.msg)
+      });
+    }
+    next();
+  }
+];
+
+/**
+ * Middleware validate ID sản phẩm và variant trong params (Legacy)
  */
 export const validateProductVariantIds = [
   param("productId")
