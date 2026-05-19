@@ -1,91 +1,160 @@
 import mongoose from "mongoose";
 
-const productVariantSchema = new mongoose.Schema(
-{
-  productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Product",
-    required: true,
-    index: true
-  },
+const inventorySchema = new mongoose.Schema(
+  {
+    quantity: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
 
-  name: {
-    type: String,
-    trim: true
+    reserved: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
   },
-
-  sku: {
-    type: String,
-    unique: true,
-    sparse: true,
-    index: true
-  },
-
-  barcode: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-
-  price: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  costPrice: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  stock: {
-    type: Number,
-    default: 0,
-    min: 0,
-    index: true
-  },
-
-  unit: {
-    type: String,
-    default: "piece"
-  },
-
-  conversionValue: {
-    type: Number,
-    default: 1
-  },
-
-  attributes: {
-    type: Map,
-    of: String
-  },
-
-  isActive: {
-    type: Boolean,
-    default: true,
-    index: true
+  {
+    _id: false
   }
+);
 
-},
-{
-  timestamps: true,
-  versionKey: false
-});
+const attributeSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true
+    },
+
+    value: {
+      type: String,
+      required: true,
+      trim: true
+    }
+  },
+  {
+    _id: false
+  }
+);
+
+const productVariantSchema = new mongoose.Schema(
+  {
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+      index: true
+    },
+
+    sku: {
+      type: String,
+      required: true,
+      unique: true,
+      uppercase: true,
+      trim: true,
+      index: true
+    },
+
+    barcode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true
+    },
+
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+      index: true
+    },
+
+    costPrice: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    inventory: {
+      type: inventorySchema,
+      default: () => ({})
+    },
+
+    unit: {
+      type: String,
+      default: "piece",
+      trim: true
+    },
+
+    conversionRate: {
+      type: Number,
+      default: 1,
+      min: 1
+    },
+
+    attributes: {
+      type: [attributeSchema],
+      default: []
+    },
+
+    images: {
+      type: String
+    },
+
+    isDefault: {
+      type: Boolean,
+      default: false
+    },
+
+    lowStockThreshold: {
+      type: Number,
+      default: 5,
+      min: 0
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true
+    }
+  },
+  {
+    timestamps: true,
+    versionKey: false
+  }
+);
 
 // ===== INDEXES =====
 
-// Compound indexes for common queries
-productVariantSchema.index({ productId: 1, isActive: 1 });
-productVariantSchema.index({ productId: 1, price: 1 });
+productVariantSchema.index({
+  productId: 1,
+  isActive: 1
+});
 
-// Single indexes for frequent searches
-productVariantSchema.index({ price: 1 });
-productVariantSchema.index({ name: "text" }); // For text search on variant names
+productVariantSchema.index({
+  productId: 1,
+  price: 1
+});
 
-// Index for sorting by time
-productVariantSchema.index({ createdAt: -1 });
-productVariantSchema.index({ updatedAt: -1 });
+productVariantSchema.index({
+  productId: 1,
+  isDefault: 1
+});
 
-export default mongoose.model("ProductVariant", productVariantSchema);
+productVariantSchema.index({
+  productId: 1,
+  sku: 1
+});
+
+productVariantSchema.index({
+  "inventory.quantity": 1
+});
+
+productVariantSchema.index({
+  createdAt: -1
+});
+
+export default mongoose.model("ProductVariant", productVariantSchema );

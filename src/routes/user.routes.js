@@ -4,22 +4,6 @@ import * as userCtrl from "../controllers/user.controller.js";
 import { authenticate, isAdmin, canManage } from "../middlewares/auth.middleware.js";
 import { catchAsync } from '../middlewares/errorHandler.middleware.js';
 
-// ===== PUBLIC ROUTES =====
-
-/**
- * @desc    Đăng ký người dùng mới
- * @route   POST /api/users/register
- * @access  Public
- */
-router.post('/register', catchAsync(userCtrl.register));
-
-/**
- * @desc    Đăng nhập
- * @route   POST /api/users/login
- * @access  Public
- */
-router.post('/login', catchAsync(userCtrl.login));
-
 // ===== PROTECTED ROUTES =====
 
 /**
