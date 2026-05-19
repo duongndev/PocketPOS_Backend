@@ -10,16 +10,22 @@ const router = express.Router();
 router.get('/', catchAsync(categoryCtrl.getCategories));
 
 /**
- * @desc    Lấy danh mục theo ID
- * @route   GET /api/categories/:id
+ * @desc    Lấy tất cả danh mục con
+ * @route   GET /api/categories/children
  */
-router.get('/:id', catchAsync(categoryCtrl.getCategoryById));
+router.get('/children', catchAsync(categoryCtrl.getChildCategories));
 
 /**
  * @desc    Lấy cây danh mục
  * @route   GET /api/categories/tree
  */
 router.get('/tree', catchAsync(categoryCtrl.getCategoryTree));
+
+/**
+ * @desc    Lấy danh mục theo ID
+ * @route   GET /api/categories/:id
+ */
+router.get('/:id', catchAsync(categoryCtrl.getCategoryById));
 
 /**
  * @desc    Tạo danh mục mới

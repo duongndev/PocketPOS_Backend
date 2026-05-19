@@ -868,6 +868,111 @@ export const getCategoryTree = async (req, res) => {
 };
 
 /**
+ * Get all child categories (categories that have a parent)
+ */
+export const getChildCategories = async (req, res) => {
+  try {
+    const query = req.sanitizedQuery || req.query;
+
+    // Build base query - only get categories with parentId
+    let baseQuery = {
+      parentId: { $ne: null, $exists: true }
+    };
+
+    // Handle isActive filter
+    if (query.isActive !== undefined) {
+      baseQuery.isActive = query.isActive === 'true';
+    }
+
+    // Handle search
+    if (query.search) {
+      const cleanedTerm = query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const termWithoutDiacritics = removeVietnameseDiacritics(cleanedTerm);
+
+      const searchQuery = {
+        $or: [
+          { name: { $regex: new RegExp(cleanedTerm, 'gi') } },
+          { name: { $regex: new RegExp(termWithoutDiacritics, 'gi') } }
+        ]
+      };
+
+      const finalQuery = { ...baseQuery, ...searchQuery };
+
+      const result = await paginate(req, Category, {
+        defaultPage: 1,
+        defaultLimit: 10,
+        maxLimit: 10,
+        allowedSortFields: ['name', 'slug', 'createdAt', 'updatedAt', 'sortOrder'],
+        defaultSortField: 'sortOrder',
+        defaultSortOrder: 'asc',
+        searchFields: [],
+        searchMaxLength: 100,
+        lean: true,
+        baseQuery: finalQuery,
+        populate: [
+          {
+            path: 'parentId',
+            select: 'name slug',
+            match: { isActive: true }
+          }
+        ]
+      });
+
+      logger.info('Danh mục con đã được lấy thành công', {
+        totalCategories: result.pagination.totalItems,
+        page: result.pagination.currentPage,
+        limit: result.pagination.itemsPerPage,
+        search: query.search || 'none'
+      });
+
+      return successResponse(res, 'Lấy danh mục con thành công', {
+        categories: result.data,
+        pagination: result.pagination
+      });
+    }
+
+    const result = await paginate(req, Category, {
+      defaultPage: 1,
+      defaultLimit: 10,
+      maxLimit: 10,
+      allowedSortFields: ['name', 'slug', 'createdAt', 'updatedAt', 'sortOrder'],
+      defaultSortField: 'sortOrder',
+      defaultSortOrder: 'asc',
+      searchFields: [],
+      searchMaxLength: 100,
+      lean: true,
+      baseQuery,
+      populate: [
+        {
+          path: 'parentId',
+          select: 'name slug',
+          match: { isActive: true }
+        }
+      ]
+    });
+
+    logger.info('Danh mục con đã được lấy thành công', {
+      totalCategories: result.pagination.totalItems,
+      page: result.pagination.currentPage,
+      limit: result.pagination.itemsPerPage
+    });
+
+    return successResponse(res, 'Lấy danh mục con thành công', {
+      categories: result.data,
+      pagination: result.pagination
+    });
+
+  } catch (error) {
+    logger.error('Lỗi khi lấy danh sách danh mục con', {
+      error: error.message,
+      stack: error.stack,
+      query: req.sanitizedQuery || req.query
+    });
+    return errorResponse(res, 'Không thể lấy danh mục con', 500);
+  }
+};
+
+/**
  * Restore soft deleted category
  */
 export const restoreCategory = async (req, res) => {

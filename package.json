@@ -7,11 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "seed": "node scripts/seed-categories.js",
-    "seed:10": "node scripts/seed-categories.js 10",
-    "seed:50": "node scripts/seed-categories.js 50",
-    "seed:100": "node scripts/seed-categories.js 100",
-    "seed:help": "node scripts/seed-categories.js --help"
+    "seed": "node scripts/seed-all.js",
+    "seed:categories": "node scripts/seed-categories.js",
+    "seed:products": "node scripts/seed-products.js",
+    "seed:variants": "node scripts/seed-products-with-variants.js",
+    "seed:help": "node scripts/seed-all.js --help"
   },
   "keywords": [],
   "author": "duongnd",
