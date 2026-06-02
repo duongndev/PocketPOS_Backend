@@ -102,6 +102,7 @@ export const authenticate = async (req, res, next) => {
     if (!user) {
       logger.warn('Authentication failed: User not found', {
         userId: decoded.userId,
+        email: decoded.email,
         ip: req.ip
       });
       return errorResponse(res, 'Người dùng không tồn tại', 401);

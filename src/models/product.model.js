@@ -1,117 +1,150 @@
 import mongoose from "mongoose";
 
-
-const productOptionSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true
-    },
-
-    values: [
-      {
-        type: String,
-        trim: true
-      }
-    ]
-  },
-  {
-    _id: false
-  }
-);
-
 const productSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      index: true
+    // Thuộc cửa hàng nào
+    storeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Store",
+      required: [true, "Store là bắt buộc"],
+      index: true,
     },
 
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-      index: true
-    },
-
+    // Thuộc danh mục nào
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
-      required: true,
-      index: true
+      required: [true, "Danh mục là bắt buộc"],
+      index: true,
     },
 
+    // Tên sản phẩm
+    name: {
+      type: String,
+      required: [true, "Tên sản phẩm là bắt buộc"],
+      trim: true,
+      maxlength: [200, "Tên sản phẩm không được vượt quá 200 ký tự"],
+    },
+
+    // Mã SKU nội bộ
+    sku: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+      index: true,
+    },
+
+    // Mã vạch dùng để quét bán hàng
+    barcode: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+    },
+
+    // Thương hiệu
     brand: {
       type: String,
-      default: null,
-      index: true
+      trim: true,
+      default: "",
     },
 
+    // Hình ảnh sản phẩm
+    imageUrl: {
+      type: String,
+      default: "",
+    },
+
+    // Giá nhập
+    costPrice: {
+      type: Number,
+      required: [true, "Giá nhập là bắt buộc"],
+      min: [0, "Giá nhập không hợp lệ"],
+    },
+
+    // Giá bán
+    sellingPrice: {
+      type: Number,
+      required: [true, "Giá bán là bắt buộc"],
+      min: [0, "Giá bán không hợp lệ"],
+    },
+
+    // Tồn kho hiện tại
+    stock: {
+      type: Number,
+      default: 0,
+      min: [0, "Tồn kho không hợp lệ"],
+    },
+
+    // Đơn vị tính
+    unit: {
+      type: String,
+      default: "Cái",
+      trim: true,
+    },
+
+    // Mô tả
     description: {
       type: String,
-      default: ""
+      default: "",
+      maxlength: [1000, "Mô tả không được vượt quá 1000 ký tự"],
     },
 
-    images: {
-      type: String
-    },
-
-    hasVariants: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-
-    options: {
-      type: [productOptionSchema],
-      default: []
-    },
-
-    tags: {
-      type: [String],
-      default: []
-    },
-
+    // Trạng thái hoạt động
     isActive: {
       type: Boolean,
       default: true,
-      index: true
     },
-
-    deletedAt: {
-      type: Date,
-      default: null
-    }
   },
   {
     timestamps: true,
-    versionKey: false
-  }
+    versionKey: false,
+  },
 );
 
-// ===== TEXT SEARCH =====
+/**
+ * INDEXES
+ */
 
+
+// Tìm kiếm theo tên
 productSchema.index({
   name: "text",
-  description: "text",
-  tags: "text"
 });
 
-// ===== FILTER INDEXES =====
+// Không cho trùng SKU trong cùng cửa hàng
+productSchema.index(
+  {
+    storeId: 1,
+    sku: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      sku: {
+        $exists: true,
+        $ne: null,
+      },
+    },
+  },
+);
 
-productSchema.index({
-  categoryId: 1,
-  isActive: 1
-});
-
-productSchema.index({
-  createdAt: -1
-});
+// Không cho trùng barcode trong cùng cửa hàng
+productSchema.index(
+  {
+    storeId: 1,
+    barcode: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      barcode: {
+        $exists: true,
+        $ne: null,
+      },
+    },
+  },
+);
 
 export default mongoose.model("Product", productSchema);

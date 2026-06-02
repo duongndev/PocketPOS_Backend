@@ -1,5 +1,5 @@
 // Helper: Sanitize input để tránh XSS
-function sanitizeInput(input) {
+export const sanitizeInput = (input) => {
   if (typeof input !== "string") return input;
 
   return input
@@ -10,9 +10,14 @@ function sanitizeInput(input) {
 }
 
 // Helper: Check if IP is in allowed range
-function isIPAllowed(ip, allowedIPs = []) {
+export const isIPAllowed = (ip, allowedIPs = []) => {
   if (allowedIPs.length === 0) return true;
   return allowedIPs.includes(ip);
-}
+};
 
-export { sanitizeInput, isIPAllowed };
+export const generateSKU = (name) => {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const namePart = name ? name.replace(/\s+/g, '').substring(0, 3).toUpperCase() : 'PRD';
+  return `${namePart}-${timestamp}-${randomStr}`;
+}
