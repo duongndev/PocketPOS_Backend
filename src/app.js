@@ -74,6 +74,18 @@ app.get('/', (req, res) => {
         path: '/api/products',
         methods: ['GET', 'POST', 'PUT', 'DELETE']
       },
+      orders: {
+        path: '/api/orders',
+        methods: ['GET', 'POST', 'PUT', 'DELETE']
+      },
+      auth: {
+        path: '/api/auth',
+        methods: ['POST']
+      },
+      stores: {
+        path: '/api/stores',
+        methods: ['GET', 'POST', 'PUT', 'DELETE']
+      }
     },
     documentation: '/api/docs',
     health: '/health'
@@ -88,11 +100,15 @@ app.get('/', (req, res) => {
 import productRoutes from './routes/product.routes.js';
 import categoryRoutes from './routes/category.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import storeRoutes from './routes/store.routes.js';
+import orderRoutes from './routes/order.routes.js';
 
 // API Routes with specific rate limiting
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/stores', storeRoutes);
+app.use('/api/orders', orderRoutes);
 
 // API documentation placeholder
 app.get('/api/docs', (req, res) => {

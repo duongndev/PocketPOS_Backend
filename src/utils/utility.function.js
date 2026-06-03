@@ -21,3 +21,33 @@ export const generateSKU = (name) => {
   const namePart = name ? name.replace(/\s+/g, '').substring(0, 3).toUpperCase() : 'PRD';
   return `${namePart}-${timestamp}-${randomStr}`;
 }
+
+import Counter from "../models/counter.model.js";
+
+export const generateOrderNumber = async () => {
+  const now = new Date();
+
+  const date =
+    now.getFullYear().toString() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+
+  const counter = await Counter.findOneAndUpdate(
+    {
+      name: `ORDER_${date}`
+    },
+    {
+      $inc: {
+        sequence: 1
+      }
+    },
+    {
+      new: true,
+      upsert: true
+    }
+  );
+
+  const sequence = String(counter.sequence).padStart(4, "0");
+
+  return `#ORD-${date}${sequence}`;
+};

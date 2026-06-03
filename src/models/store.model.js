@@ -38,7 +38,28 @@ const storeSchema = new mongoose.Schema(
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User"
-    }
+    },
+    
+    isCompleteProfile: {
+      type: Boolean,
+      default: false
+    },
+
+    bankAccountNumber: {
+      type: String,
+      trim: true,
+    },
+
+    bankName: {
+      type: String,
+      trim: true,
+    },
+
+    bankAccountNumber: {
+      type: String,
+      trim: true,
+    },
+
   },
   {
     timestamps: true,

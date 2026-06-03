@@ -129,9 +129,9 @@ export const login = async (req, res) => {
     });
 
     return successResponse(res, "Đăng nhập thành công", {
-     tokens,
+      tokens,
       user: {
-        id: user._id,
+        _id: user._id,
         fullName: user.fullName,
         email: user.email,
         role: user.role,
@@ -139,9 +139,12 @@ export const login = async (req, res) => {
         isActive: user.isActive,
         lastLoginAt: user.lastLoginAt,
         store: {
-          id: user.storeId?._id,
+          _id: user.storeId?._id,
           storeName: user.storeId?.storeName,
-        }
+          phoneNumber: user.storeId?.phoneNumber,
+          address: user.storeId?.address,
+          isCompleteProfile: user.storeId?.isCompleteProfile,
+        },
       },
     });
   } catch (error) {
@@ -188,11 +191,26 @@ export const getProfile = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    const user = await User.findById(userId).select("-password").populate("storeId");
+    const user = await User.findById(userId)
+      .select("-password")
+      .populate("storeId");
 
     if (!user) {
       return errorResponse(res, "Không tìm thấy người dùng", 404);
     }
+
+    if (!user.isActive) {
+      return errorResponse(res, "Tài khoản của bạn đã bị khóa", 403);
+    }
+
+    logger.info("Lấy thông tin người dùng thành công", {
+      userId: userId,
+      email: user.email,
+      role: user.role,
+      storeId: user.storeId,
+      ip: req.ip,
+      action: "GET_PROFILE",
+    });
 
     return successResponse(res, "Lấy thông tin người dùng thành công", user);
   } catch (error) {
