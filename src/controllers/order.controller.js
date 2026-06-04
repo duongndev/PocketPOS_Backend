@@ -1,12 +1,5 @@
 import Order from "../models/order.model.js";
 import Product from "../models/product.model.js";
-import OrderItem from "../models/orderItem.model.js";
-import {
-  paginate,
-  parsePaginationParams,
-  parseSortParams,
-  createPaginationMeta,
-} from "../utils/pagination.util.js";
 import {
   successResponse,
   errorResponse,
@@ -29,7 +22,21 @@ export const createOrder = async (req, res) => {
       return badRequestResponse(res, "Đơn hàng phải có ít nhất một sản phẩm");
     }
 
-    const productIds = items.map((item) => item.productId);
+    const itemMap = new Map();
+    for (const item of items) {
+      if (item.quantity <= 0) {
+        await session.abortTransaction();
+        return badRequestResponse(res, "Số lượng sản phẩm không hợp lệ");
+      }
+      if (itemMap.has(item.productId)) {
+        itemMap.get(item.productId).quantity += item.quantity;
+      } else {
+        itemMap.set(item.productId, { ...item });
+      }
+    }
+
+    const uniqueItems = Array.from(itemMap.values());
+    const productIds = uniqueItems.map((item) => item.productId);
 
     const products = await Product.find({
       _id: { $in: productIds },
@@ -48,31 +55,21 @@ export const createOrder = async (req, res) => {
     let totalAmount = 0;
     let totalCost = 0;
     let totalQuantity = 0;
-
     const orderItems = [];
+    const bulkOperations = [];
 
-    for (const item of items) {
+    for (const item of uniqueItems) {
       const product = products.find((p) => p._id.toString() === item.productId);
-      if (!product) {
-        await session.abortTransaction();
-        return badRequestResponse(res, "Không tìm thấy sản phẩm");
-      }
-
-      if (item.quantity <= 0) {
-        await session.abortTransaction();
-        return badRequestResponse(
-          res,
-          `Số lượng không hợp lệ: ${product.name}`,
-        );
-      }
 
       if (product.stock < item.quantity) {
         await session.abortTransaction();
-        return badRequestResponse(res, `${product.name} không đủ tồn kho`);
+        return badRequestResponse(
+          res,
+          `Sản phẩm ${product.name} không đủ hàng trong kho (hiện có ${product.stock})`,
+        );
       }
 
       const subtotal = product.sellingPrice * item.quantity;
-
       const itemCost = product.costPrice * item.quantity;
 
       totalAmount += subtotal;
@@ -89,58 +86,59 @@ export const createOrder = async (req, res) => {
         quantity: item.quantity,
         subtotal,
       });
-      product.stock -= item.quantity;
-      await product.save({ session });
+
+      bulkOperations.push({
+        updateOne: {
+          filter: {
+            _id: product._id,
+            stock: { $gte: item.quantity }, // Đảm bảo lúc ghi DB, tồn kho vẫn đủ
+          },
+          update: { $inc: { stock: -item.quantity } },
+        },
+      });
     }
 
     const profit = totalAmount - totalCost;
-
     const orderNumber = await generateOrderNumber();
-    const order = await Order.create(
-      [
-        {
-          storeId: req.user.storeId,
-          createdBy: req.user._id,
-          orderNumber,
-          totalQuantity,
-          totalCost,
-          totalAmount,
-          profit,
-          paymentMethod,
-          note,
-          status: "completed",
-        },
-      ],
-      { session },
-    );
 
-    const orderId = order[0]._id;
+    const newOrder = new Order({
+      storeId: req.user.storeId,
+      createdBy: req.user._id,
+      orderNumber,
+      totalAmount,
+      totalCost,
+      profit,
+      totalQuantity,
+      paymentMethod,
+      note,
+      status: "completed",
+      items: orderItems,
+    });
 
-    const orderItemDocuments = orderItems.map((item) => ({
-      ...item,
-      orderId,
-    }));
-
-    await OrderItem.insertMany(orderItemDocuments, { session });
-
+    await newOrder.save({ session });
     await session.commitTransaction();
 
-    logger.info("Tạo đơn hàng mới", {
+    logger.info("Tạo đơn hàng", {
       userId: req.user._id,
       email: req.user.email,
       role: req.user.role,
       storeId: req.user.storeId,
       ip: req.ip,
       action: "CREATE_ORDER",
+      details: {
+        orderNumber: newOrder.orderNumber,
+        totalAmount: newOrder.totalAmount,
+        totalCost: newOrder.totalCost,
+        profit: newOrder.profit,
+        totalQuantity: newOrder.totalQuantity,
+        paymentMethod: newOrder.paymentMethod,
+        note: newOrder.note,
+        status: newOrder.status,
+        items: newOrder.items,
+      },
     });
 
-    return createdResponse(res, "Đơn hàng đã được tạo thành công", {
-      orderId,
-      orderNumber,
-      totalQuantity,
-      totalAmount,
-      profit,
-    });
+    return createdResponse(res, "Tạo đơn hàng thành công", newOrder);
   } catch (error) {
     await session.abortTransaction();
     logger.error("Lỗi khi tạo đơn hàng", {
@@ -151,69 +149,6 @@ export const createOrder = async (req, res) => {
     return errorResponse(res, "Đã xảy ra lỗi khi tạo đơn hàng", error.message);
   } finally {
     session.endSession();
-  }
-};
-
-export const getOrders = async (req, res) => {
-  try {
-    // Parse pagination parameters
-    const paginationParams = parsePaginationParams(req, {
-      defaultPage: 1,
-      defaultLimit: 10,
-      maxLimit: 100,
-    });
-
-    // Parse sort parameters
-    const sortParams = parseSortParams(req, ["createdAt", "totalAmount", "status"], "createdAt", "desc");
-
-    // Build query
-    const query = {
-      storeId: req.user.storeId,
-    };
-
-    // Execute paginated query
-    const result = await Order.find(query)
-      .populate("createdBy", "fullName")
-      .sort(sortParams.sortOptions)
-      .skip(paginationParams.skip)
-      .limit(paginationParams.limit)
-      .lean();
-
-    // Get total count
-    const total = await Order.countDocuments(query);
-
-    // Create pagination metadata
-    const pagination = createPaginationMeta(paginationParams.page, paginationParams.limit, total);
-
-    if (result.length === 0 && paginationParams.page === 1) {
-      return notFoundResponse(res, "Không tìm thấy đơn hàng");
-    }
-
-    logger.info("Lấy danh sách đơn hàng", {
-      userId: req.user._id,
-      email: req.user.email,
-      role: req.user.role,
-      storeId: req.user.storeId,
-      ip: req.ip,
-      action: "GET_ORDERS",
-      pagination: {
-        page: paginationParams.page,
-        limit: paginationParams.limit,
-        total,
-      },
-    });
-
-    return successResponse(res, "Lấy danh sách đơn hàng thành công", {
-      orders: result,
-      pagination,
-    });
-  } catch (error) {
-    logger.error("Lỗi khi lấy danh sách đơn hàng", {
-      userId: req.user._id,
-      error: error.message,
-      stack: error.stack,
-    });
-    return errorResponse(res, "Lỗi hệ thống", error.message);
   }
 };
 
@@ -228,9 +163,10 @@ export const getOrderById = async (req, res) => {
       return notFoundResponse(res, "Không tìm thấy hóa đơn");
     }
 
-    const items = await OrderItem.find({
-      orderId: order._id,
-    });
+    const items = order.items;
+
+    const orderInfo = order.toObject();
+    delete orderInfo.items;
 
     logger.info("Lấy chi tiết đơn hàng", {
       userId: req.user._id,
@@ -240,19 +176,27 @@ export const getOrderById = async (req, res) => {
       ip: req.ip,
       action: "GET_ORDER_DETAIL",
       details: {
-        orderId: order._id,
+        orderId: req.params.id,
+        items,
       },
     });
 
     return successResponse(res, "Lấy chi tiết đơn hàng thành công", {
-      order,
+      order: orderInfo,
       items,
     });
   } catch (error) {
     logger.error("Lỗi khi lấy chi tiết đơn hàng", {
-      error: error.message,
-      stack: error.stack,
-      body: req.body,
+      userId: req.user._id,
+      email: req.user.email,
+      role: req.user.role,
+      storeId: req.user.storeId,
+      ip: req.ip,
+      action: "GET_ORDER_DETAIL",
+      details: {
+        orderId: req.params.id,
+        items: order.items,
+      },
     });
     return errorResponse(res, "Lỗi hệ thống", error.message);
   }
@@ -271,40 +215,24 @@ export const cancelOrder = async (req, res) => {
 
     if (!order) {
       await session.abortTransaction();
-
       return notFoundResponse(res, "Không tìm thấy hóa đơn");
     }
 
     if (order.status === "cancelled") {
       await session.abortTransaction();
-
       return errorResponse(res, "Hóa đơn đã bị hủy", "Hóa đơn đã bị hủy");
     }
 
-    const items = await OrderItem.find({
-      orderId: order._id,
-    }).session(session);
-
-    for (const item of items) {
-      await Product.findByIdAndUpdate(
-        item.productId,
-        {
-          $inc: {
-            stock: item.quantity,
-          },
-        },
-        {
-          session,
-        },
+    for (const item of order.items) {
+      await Product.updateOne(
+        { _id: item.productId },
+        { $inc: { stock: item.quantity } },
+        { session },
       );
     }
 
     order.status = "cancelled";
-
-    await order.save({
-      session,
-    });
-
+    await order.save({ session });
     await session.commitTransaction();
 
     logger.info("Hủy hóa đơn", {
@@ -315,21 +243,83 @@ export const cancelOrder = async (req, res) => {
       ip: req.ip,
       action: "CANCEL_ORDER",
       details: {
-        orderId: order._id,
+        orderId: req.params.id,
+        items: order.items,
       },
     });
-
-    return successResponse(res, "Hủy hóa đơn thành công", null);
+    return successResponse(res, "Hủy hóa đơn thành công", order);
   } catch (error) {
     await session.abortTransaction();
-
-    logger.error("Lỗi khi hủy hóa đơn", {
-        error: error.message,
-        stack: error.stack,
-        body: req.body,
-    })
     return errorResponse(res, "Lỗi hệ thống", error.message);
   } finally {
     session.endSession();
+  }
+};
+
+export const getOrders = async (req, res) => {
+  try {
+
+    let page = parseInt(req.query.page, 10);
+    let limit = parseInt(req.query.limit, 10);
+
+    page = !isNaN(page) && page > 0 ? page : 1;
+    limit = !isNaN(limit) && limit > 0 ? limit : 10;
+
+    if (limit > 100) limit = 100;
+
+    const skip = (page - 1) * limit;
+
+    const allowedSortFields = ["createdAt", "totalAmount", "status"];
+    
+    let sortBy = req.query.sortBy || "createdAt";
+    if (!allowedSortFields.includes(sortBy)) {
+      sortBy = "createdAt";
+    }
+
+    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
+    
+    const sortOptions = { [sortBy]: sortOrder };
+
+    const query = { storeId: req.user.storeId };
+
+    const [result, total] = await Promise.all([
+      Order.find(query)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Order.countDocuments(query)
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+    
+    const pagination = {
+      currentPage: page,
+      itemsPerPage: limit,
+      totalItems: total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    logger.info("Lấy danh sách đơn hàng", {
+      userId: req.user._id,
+      storeId: req.user.storeId,
+      action: "GET_ORDERS",
+      pagination: { page, limit, total }
+    });
+
+    return successResponse(res, "Lấy danh sách đơn hàng thành công", {
+      orders: result,
+      pagination,
+    });
+
+  } catch (error) {
+    logger.error("Lỗi khi lấy danh sách đơn hàng", {
+      userId: req.user._id,
+      error: error.message,
+      stack: error.stack,
+    });
+    return errorResponse(res, "Lỗi hệ thống", error.message);
   }
 };
