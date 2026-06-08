@@ -97,18 +97,6 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
-    paymentMethod: {
-      type: String,
-      enum: ["cash", "bank_transfer"],
-      default: "cash",
-    },
-
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "paid"],
-      default: "paid",
-    },
-
     note: {
       type: String,
       default: "",
@@ -116,8 +104,8 @@ const orderSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["completed", "cancelled"],
-      default: "completed",
+      enum: ["pending", "completed", "cancelled"],
+      default: "pending",
     },
   },
   {

@@ -102,6 +102,8 @@ import categoryRoutes from './routes/category.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import storeRoutes from './routes/store.routes.js';
 import orderRoutes from './routes/order.routes.js';
+import statisticsRoutes from './routes/statistics.routes.js';
+import webhookRoutes from './routes/webhook.route.js';
 
 // API Routes with specific rate limiting
 app.use('/api/categories', categoryRoutes);
@@ -109,6 +111,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/statistics', statisticsRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // API documentation placeholder
 app.get('/api/docs', (req, res) => {

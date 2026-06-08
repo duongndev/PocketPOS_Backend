@@ -9,6 +9,7 @@ import {
 } from "../utils/response.js";
 import { paginate } from "../utils/pagination.util.js";
 import logger from "../utils/logger.util.js";
+import { BankList } from "../utils/utility.function.js";
 
 export const getStoreProfile = async (req, res) => {
   try {
@@ -61,7 +62,10 @@ const validateStoreProfile = (data) => {
   }
 
   if (data.phoneNumber !== undefined) {
-    if (data.phoneNumber && !/^[0-9]{10,11}$/.test(data.phoneNumber.replace(/[\s\-\+]/g, ""))) {
+    if (
+      data.phoneNumber &&
+      !/^[0-9]{10,11}$/.test(data.phoneNumber.replace(/[\s\-\+]/g, ""))
+    ) {
       errors.push("Số điện thoại không hợp lệ (10-11 chữ số)");
     }
   }
@@ -75,24 +79,6 @@ const validateStoreProfile = (data) => {
   if (data.description !== undefined) {
     if (data.description && data.description.length > 500) {
       errors.push("Mô tả không được vượt quá 500 ký tự");
-    }
-  }
-
-  if (data.bankAccountNumber !== undefined) {
-    if (data.bankAccountNumber && !/^[0-9]{8,20}$/.test(data.bankAccountNumber.replace(/[\s\-]/g, ""))) {
-      errors.push("Số tài khoản không hợp lệ");
-    }
-  }
-
-  if (data.bankName !== undefined) {
-    if (data.bankName && data.bankName.length > 200) {
-      errors.push("Tên ngân hàng không được vượt quá 200 ký tự");
-    }
-  }
-
-  if (data.bankAccountName !== undefined) {
-    if (data.bankAccountName && data.bankAccountName.length > 200) {
-      errors.push("Tên chủ tài khoản không được vượt quá 200 ký tự");
     }
   }
 
@@ -121,33 +107,23 @@ const isValidUrl = (string) => {
  * Calculate if store profile is complete
  */
 const isProfileComplete = (store) => {
-  return !!(
-    store.storeName &&
-    store.phoneNumber &&
-    store.address
-  );
+  return !!(store.storeName && store.phoneNumber && store.address);
 };
 
 export const updateStoreProfile = async (req, res) => {
   try {
-    const {
-      storeName,
-      phoneNumber,
-      address,
-      description,
-      logoUrl,
-      bankAccountNumber,
-      bankName,
-      bankAccountName,
-    } = req.body;
+    const { storeName, phoneNumber, address, description, logoUrl } = req.body;
 
     // Check if at least one field is provided for update
     const hasDataToUpdate = Object.values(req.body).some(
-      (value) => value !== undefined && value !== null && value !== ""
+      (value) => value !== undefined && value !== null && value !== "",
     );
 
     if (!hasDataToUpdate) {
-      return badRequestResponse(res, "Vui lòng cung cấp ít nhất một trường để cập nhật");
+      return badRequestResponse(
+        res,
+        "Vui lòng cung cấp ít nhất một trường để cập nhật",
+      );
     }
 
     // Validate input data
@@ -169,9 +145,6 @@ export const updateStoreProfile = async (req, res) => {
     if (address !== undefined) updateData.address = address.trim();
     if (description !== undefined) updateData.description = description.trim();
     if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
-    if (bankAccountNumber !== undefined) updateData.bankAccountNumber = bankAccountNumber.trim();
-    if (bankName !== undefined) updateData.bankName = bankName.trim();
-    if (bankAccountName !== undefined) updateData.bankAccountName = bankAccountName.trim();
 
     // Update store with new data
     Object.assign(store, updateData);
@@ -255,6 +228,84 @@ export const updateStoreStatus = async (req, res) => {
     return errorResponse(
       res,
       "Không thể cập nhật trạng thái cửa hàng",
+      error.message,
+    );
+  }
+};
+
+export const getBanks = async (req, res) => {
+  try {
+    return successResponse(res, "Lấy danh sách ngân hàng", BankList);
+  } catch (error) {
+    logger.error("Lỗi khi lấy danh sách ngân hàng", {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user._id,
+      ip: req.ip,
+      action: "GET_BANKS",
+    });
+    return errorResponse(
+      res,
+      "Không thể lấy danh sách ngân hàng",
+      error.message,
+    );
+  }
+};
+
+export const updateBankInfo = async (req, res) => {
+  try {
+    const { bankCode, bankName, accountNumber, accountHolderName } = req.body;
+
+    const store = await Store.findByIdAndUpdate(
+      req.user.storeId,
+      {
+        bankInfo: {
+          bankCode,
+          bankName,
+          accountNumber,
+          accountHolderName,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!store) {
+      return notFoundResponse(res, "Không tìm thấy cửa hàng");
+    }
+
+    logger.info("Cập nhật thông tin ngân hàng", {
+      userId: req.user._id,
+      email: req.user.email,
+      role: req.user.role,
+      storeId: req.user.storeId,
+      ip: req.ip,
+      action: "UPDATE_BANK_INFO",
+      details: {
+        bankCode,
+        bankName,
+        accountNumber,
+        accountHolderName,
+      },
+    });
+
+    return successResponse(
+      res,
+      "Cập nhật thông tin ngân hàng thành công",
+      store,
+    );
+  } catch (error) {
+    logger.error("Lỗi khi cập nhật thông tin ngân hàng", {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user._id,
+      ip: req.ip,
+      action: "UPDATE_BANK_INFO",
+    });
+    return errorResponse(
+      res,
+      "Không thể cập nhật thông tin ngân hàng",
       error.message,
     );
   }

@@ -1,0 +1,261 @@
+import mongoose from "mongoose";
+import Order from "../models/order.model.js";
+import Product from "../models/product.model.js";
+import Payment from "../models/payment.model.js";
+import logger from "../utils/logger.util.js";
+
+export const sepayWebhook = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const {
+      id,
+      gateway,
+      transactionDate,
+      content,
+      transferType,
+      transferAmount,
+      referenceCode,
+    } = req.body;
+
+    logger.info("SEPAY_WEBHOOK_RECEIVED", {
+      payload: req.body,
+    });
+
+    /**
+     * Chỉ xử lý giao dịch tiền vào
+     */
+    if (transferType !== "in") {
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Bỏ qua giao dịch tiền ra",
+      });
+    }
+
+    /**
+     * Chống webhook trùng
+     */
+    const existedTransaction =
+      await Payment.findOne({
+        transactionId: id,
+      }).session(session);
+
+    if (existedTransaction) {
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Webhook đã được xử lý",
+      });
+    }
+
+    /**
+     * Tìm payment theo nội dung CK
+     *
+     * Ví dụ:
+     * TT ORD202606080001
+     */
+    const payment =
+      await Payment.findOne({
+        qrContent: content,
+      }).session(session);
+
+    if (!payment) {
+      logger.warn("PAYMENT_NOT_FOUND", {
+        content,
+      });
+
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Không tìm thấy payment",
+      });
+    }
+
+    /**
+     * Đã thanh toán rồi
+     */
+    if (payment.paymentStatus === "paid") {
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+        message: "Payment đã thanh toán",
+      });
+    }
+
+    /**
+     * Kiểm tra số tiền
+     */
+    if (
+      Number(transferAmount) <
+      Number(payment.amount)
+    ) {
+      throw new Error(
+        `Số tiền không hợp lệ. Yêu cầu ${payment.amount}, nhận ${transferAmount}`,
+      );
+    }
+
+    const order =
+      await Order.findById(
+        payment.orderId,
+      ).session(session);
+
+    if (!order) {
+      throw new Error(
+        "Không tìm thấy đơn hàng",
+      );
+    }
+
+    /**
+     * Đơn hàng đã hoàn thành
+     */
+    if (order.status === "completed") {
+      payment.paymentStatus = "paid";
+
+      payment.transactionId = id;
+
+      payment.referenceCode =
+        referenceCode;
+
+      payment.bankName = gateway;
+
+      payment.paidAt =
+        transactionDate
+          ? new Date(transactionDate)
+          : new Date();
+
+      await payment.save({
+        session,
+      });
+
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        success: true,
+      });
+    }
+
+    /**
+     * Trừ tồn kho
+     */
+    const stockOperations = [];
+
+    for (const item of order.items) {
+      stockOperations.push({
+        updateOne: {
+          filter: {
+            _id: item.productId,
+            stock: {
+              $gte: item.quantity,
+            },
+          },
+
+          update: {
+            $inc: {
+              stock: -item.quantity,
+            },
+          },
+        },
+      });
+    }
+
+    if (stockOperations.length > 0) {
+      const result =
+        await Product.bulkWrite(
+          stockOperations,
+          {
+            session,
+          },
+        );
+
+      if (
+        result.modifiedCount !==
+        stockOperations.length
+      ) {
+        throw new Error(
+          "Không thể cập nhật tồn kho",
+        );
+      }
+    }
+
+    /**
+     * Update Payment
+     */
+    payment.paymentStatus = "paid";
+
+    payment.transactionId = id;
+
+    payment.referenceCode =
+      referenceCode;
+
+    payment.bankName = gateway;
+
+    payment.paidAt =
+      transactionDate
+        ? new Date(transactionDate)
+        : new Date();
+
+    await payment.save({
+      session,
+    });
+
+    /**
+     * Update Order
+     */
+    order.status = "completed";
+
+    await order.save({
+      session,
+    });
+
+    await session.commitTransaction();
+
+    logger.info(
+      "PAYMENT_COMPLETED",
+      {
+        orderId: order._id,
+        orderNumber:
+          order.orderNumber,
+
+        paymentId: payment._id,
+
+        transactionId: id,
+
+        amount:
+          transferAmount,
+
+        gateway,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Thanh toán thành công",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+
+    logger.error(
+      "SEPAY_WEBHOOK_ERROR",
+      {
+        error: error.message,
+        stack: error.stack,
+        payload: req.body,
+      },
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    await session.endSession();
+  }
+};

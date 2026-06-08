@@ -9,6 +9,8 @@ router.get("/me", storeCtrl.getStoreProfile);
 
 router.put("/me", storeCtrl.updateStoreProfile);
 
+router.put("/banking-info", storeCtrl.updateBankInfo);
+
 router.patch("/me/status", storeCtrl.updateStoreStatus);
 
 export default router;
