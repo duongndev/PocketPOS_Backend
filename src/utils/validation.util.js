@@ -3,23 +3,13 @@
  */
 
 /**
- * Validate user data (username, email, fullName, phone)
+ * Validate user data (email, fullName, phone)
  * @param {Object} data - User data to validate
  * @param {boolean} isUpdate - Whether this is an update operation (allows partial data)
  * @returns {Array} Array of error messages
  */
 export const validateUserData = (data, isUpdate = false) => {
   const errors = [];
-
-  if (!isUpdate || data.username !== undefined) {
-    if (!data.username?.trim()) {
-      errors.push('Tên đăng nhập là bắt buộc');
-    } else if (data.username.length < 3) {
-      errors.push('Tên đăng nhập phải có ít nhất 3 ký tự');
-    } else if (data.username.length > 50) {
-      errors.push('Tên đăng nhập không được vượt quá 50 ký tự');
-    }
-  }
 
   if (!isUpdate || data.email !== undefined) {
     if (!data.email?.trim()) {

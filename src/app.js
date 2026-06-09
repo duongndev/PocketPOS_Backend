@@ -22,9 +22,8 @@ app.use(requestLogger);
 
 // Body parsing middleware
 app.use(express.json({ 
-  limit: '10mb',
   verify: (req, res, buf) => {
-    req.rawBody = buf;
+    req.rawBody = buf.toString("utf8");
   }
 }));
 app.use(express.urlencoded({ 
@@ -74,10 +73,18 @@ app.get('/', (req, res) => {
         path: '/api/products',
         methods: ['GET', 'POST', 'PUT', 'DELETE']
       },
-      variants: {
-        path: '/api/variants',
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+      orders: {
+        path: '/api/orders',
+        methods: ['GET', 'POST', 'PUT', 'DELETE']
       },
+      auth: {
+        path: '/api/auth',
+        methods: ['POST']
+      },
+      stores: {
+        path: '/api/stores',
+        methods: ['GET', 'POST', 'PUT', 'DELETE']
+      }
     },
     documentation: '/api/docs',
     health: '/health'
@@ -91,14 +98,20 @@ app.get('/', (req, res) => {
 
 import productRoutes from './routes/product.routes.js';
 import categoryRoutes from './routes/category.routes.js';
-import variantRoutes from './routes/variant.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import storeRoutes from './routes/store.routes.js';
+import orderRoutes from './routes/order.routes.js';
+import statisticsRoutes from './routes/statistics.routes.js';
+import webhookRoutes from './routes/webhook.route.js';
 
 // API Routes with specific rate limiting
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
-app.use('/api/variants', variantRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/stores', storeRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/statistics', statisticsRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // API documentation placeholder
 app.get('/api/docs', (req, res) => {

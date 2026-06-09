@@ -1,9 +1,10 @@
 import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
-import { successResponse, errorResponse } from '../utils/response.js';
-import { generateTokens } from '../middlewares/auth.middleware.js';
-import logger from '../utils/logger.util.js';
-import { validateUserData } from '../utils/validation.util.js';
+import { successResponse, errorResponse } from "../utils/response.js";
+import { generateTokens } from "../middlewares/auth.middleware.js";
+import logger from "../utils/logger.util.js";
+import { validateUserData } from "../utils/validation.util.js";
+import Store from "../models/store.model.js";
 
 // ===== AUTHENTICATION OPERATIONS =====
 
@@ -14,83 +15,73 @@ import { validateUserData } from '../utils/validation.util.js';
  */
 export const register = async (req, res) => {
   try {
-    const { fullName, username, email, password, confirmPassword, phone} = req.body;
+    const { storeName, fullName, email, password, confirmPassword, phone } =
+      req.body;
 
-    // Validation
-    const validationErrors = validateUserData(req.body);
-    if (validationErrors.length > 0) {
-      return errorResponse(res, validationErrors.join(', '), 400);
+    if (!storeName || !fullName || !email || !password || !confirmPassword) {
+      return errorResponse(
+        res,
+        400,
+        "Vui lòng cung cấp đầy đủ thông tin bắt buộc",
+      );
     }
 
-    // Validate password
-    if (!password || password.length < 6) {
-      return errorResponse(res, 'Mật khẩu phải có ít nhất 6 ký tự', 400);
-    }
-
-    // Check if username already exists
-    const existingUsername = await User.findOne({ username: username.trim() });
-    if (existingUsername) {
-      return errorResponse(res, 'Tên đăng nhập đã tồn tại', 409);
-    }
-
-    // Check if email already exists
-    const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
+    const existingEmail = await User.findOne({
+      email: email.trim().toLowerCase(),
+    });
     if (existingEmail) {
-      return errorResponse(res, 'Email đã tồn tại', 409);
+      return errorResponse(res, 409, "Email đã tồn tại");
     }
 
     if (password !== confirmPassword) {
-      return errorResponse(res, 'Mật khẩu xác nhận không khớp', 400);
+      return errorResponse(res, "Mật khẩu và xác nhận mật khẩu không khớp");
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(15);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashPassword = await bcrypt.hash(password, 10);
 
-    // Create new user
-    const user = new User({
-      username: username.trim(),
-      email: email.trim().toLowerCase(),
-      password: hashedPassword,
-      fullName: fullName.trim(),
-      phone: phone?.trim() || '',
-      isActive: true
+    const store = await Store.create({
+      storeName,
     });
 
-    const savedUser = await user.save();
-
-    logger.info('Người dùng đã đăng ký thành công', {
-      userId: savedUser._id,
-      username: savedUser.username,
-      email: savedUser.email,
-      role: savedUser.role,
-      action: 'REGISTER'
+    const user = await User.create({
+      fullName,
+      email,
+      phone,
+      password: hashPassword,
+      storeId: store._id,
     });
 
-    return successResponse(res, 'Đăng ký thành công', {
+    await user.save();
+
+    store.ownerId = user._id;
+    await store.save();
+
+    logger.info("Người dùng đã đăng ký thành công", {
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      storeId: store._id,
+      ip: req.ip,
+      action: "REGISTER",
+    });
+
+    return successResponse(res, "Đăng ký thành công", {
       user: {
-        id: savedUser._id,
-        fullName: savedUser.fullName,
-        username: savedUser.username,
-        email: savedUser.email,
-        role: savedUser.role,
-        phone: savedUser.phone,
-        isActive: savedUser.isActive
-      }
-    }, 201);
-
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        storeId: user.storeId,
+      },
+    });
   } catch (error) {
-    logger.error('Lỗi khi đăng ký người dùng', {
+    logger.error("Lỗi khi đăng ký người dùng", {
       error: error.message,
       stack: error.stack,
-      body: req.body
+      body: req.body,
     });
-
-    if (error.code === 11000) {
-      return errorResponse(res, 'Tên đăng nhập hoặc email đã tồn tại', 409);
-    }
-
-    return errorResponse(res, 'Không thể đăng ký', 500);
+    return errorResponse(res, "Lỗi khi đăng ký người dùng", error.message);
   }
 };
 
@@ -101,91 +92,68 @@ export const register = async (req, res) => {
  */
 export const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { email, password } = req.body;
 
-    // Validation
-    if (!identifier?.trim()) {
-      return errorResponse(res, 'Tên đăng nhập hoặc email là bắt buộc', 400);
+    if (!email || !password) {
+      return errorResponse(res, 400, "Vui lòng cung cấp email và mật khẩu");
     }
 
-    if (!password) {
-      return errorResponse(res, 'Mật khẩu là bắt buộc', 400);
-    }
-
-    // Find user by username or email
-    const user = await User.findOne({
-      $or: [
-        { username: identifier.trim() },
-        { email: identifier.trim().toLowerCase() }
-      ]
-    }).select('+password');
+    const user = await User.findOne({ email: email.trim().toLowerCase() })
+      .select("+password")
+      .populate("storeId");
 
     if (!user) {
-      logger.warn('Đăng nhập thất bại: Người dùng không tồn tại', {
-        username: identifier.trim(),
-        ip: req.ip
-      });
-      return errorResponse(res, 'Tên đăng nhập hoặc mật khẩu không đúng', 401);
+      return errorResponse(res, 401, "Email hoặc mật khẩu không đúng");
     }
 
-    // Check if user is active
     if (!user.isActive) {
-      logger.warn('Đăng nhập thất bại: Tài khoản bị vô hiệu hóa', {
-        userId: user._id,
-        username: user.username,
-        ip: req.ip
-      });
-      return errorResponse(res, 'Tài khoản đã bị vô hiệu hóa', 401);
+      return errorResponse(res, 403, "Tài khoản của bạn đã bị khóa");
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      logger.warn('Đăng nhập thất bại: Mật khẩu không đúng', {
-        userId: user._id,
-        username: user.username,
-        ip: req.ip
-      });
-      return errorResponse(res, 'Tên đăng nhập hoặc mật khẩu không đúng', 401);
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return errorResponse(res, 401, "Email hoặc mật khẩu không đúng");
     }
 
-    // Update last login
+    const tokens = generateTokens(user);
+
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Generate tokens
-    const tokens = generateTokens(user);
-
-    logger.info('Người dùng đã đăng nhập thành công', {
+    logger.info("Người dùng đã đăng nhập thành công", {
       userId: user._id,
-      username: user.username,
       email: user.email,
-      role: user.role,
+      storeId: user.storeId,
       ip: req.ip,
-      action: 'LOGIN'
+      action: "LOGIN",
     });
 
-    return successResponse(res, 'Đăng nhập thành công', {
+    return successResponse(res, "Đăng nhập thành công", {
       tokens,
       user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
+        _id: user._id,
         fullName: user.fullName,
+        email: user.email,
         role: user.role,
         phone: user.phone,
         isActive: user.isActive,
-        lastLoginAt: user.lastLoginAt
+        lastLoginAt: user.lastLoginAt,
+        store: {
+          _id: user.storeId?._id,
+          storeName: user.storeId?.storeName,
+          phoneNumber: user.storeId?.phoneNumber,
+          address: user.storeId?.address,
+          isCompleteProfile: user.storeId?.isCompleteProfile,
+        },
       },
     });
-
   } catch (error) {
-    logger.error('Lỗi khi đăng nhập', {
+    logger.error("Lỗi khi đăng nhập", {
       error: error.message,
       stack: error.stack,
-      ip: req.ip
+      ip: req.ip,
     });
-    return errorResponse(res, 'Không thể đăng nhập', 500);
+    return errorResponse(res, "Lỗi khi đăng nhập", 500, error.message);
   }
 };
 
@@ -196,21 +164,21 @@ export const login = async (req, res) => {
  */
 export const logout = async (req, res) => {
   try {
-    logger.info('Người dùng đã đăng xuất', {
+    logger.info("Người dùng đã đăng xuất", {
       userId: req.user._id,
-      username: req.user.username,
+      email: req.user.email,
       ip: req.ip,
-      action: 'LOGOUT'
+      action: "LOGOUT",
     });
 
-    return successResponse(res, 'Đăng xuất thành công');
+    return successResponse(res, "Đăng xuất thành công");
   } catch (error) {
-    logger.error('Lỗi khi đăng xuất', {
+    logger.error("Lỗi khi đăng xuất", {
       error: error.message,
       stack: error.stack,
-      ip: req.ip
+      ip: req.ip,
     });
-    return errorResponse(res, 'Không thể đăng xuất', 500);
+    return errorResponse(res, "Không thể đăng xuất", 500);
   }
 };
 
@@ -221,20 +189,36 @@ export const logout = async (req, res) => {
  */
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    const userId = req.user._id;
+
+    const user = await User.findById(userId)
+      .select("-password")
+      .populate("storeId");
 
     if (!user) {
-      return errorResponse(res, 'Không tìm thấy người dùng', 404);
+      return errorResponse(res, "Không tìm thấy người dùng", 404);
     }
 
-    return successResponse(res, 'Lấy thông tin người dùng thành công', user);
+    if (!user.isActive) {
+      return errorResponse(res, "Tài khoản của bạn đã bị khóa", 403);
+    }
 
+    logger.info("Lấy thông tin người dùng thành công", {
+      userId: userId,
+      email: user.email,
+      role: user.role,
+      storeId: user.storeId,
+      ip: req.ip,
+      action: "GET_PROFILE",
+    });
+
+    return successResponse(res, "Lấy thông tin người dùng thành công", user);
   } catch (error) {
-    logger.error('Lỗi khi lấy thông tin người dùng', {
+    logger.error("Lỗi khi lấy thông tin người dùng", {
       error: error.message,
       stack: error.stack,
-      userId: req.user._id
+      userId: userId,
     });
-    return errorResponse(res, 'Không thể lấy thông tin người dùng', 500);
+    return errorResponse(res, "Không thể lấy thông tin người dùng", 500);
   }
 };
