@@ -51,7 +51,7 @@ export const generateOrderNumber = async () => {
 
   const sequence = String(counter.sequence).padStart(4, "0");
 
-  return `#ORD-${date}${sequence}`;
+  return `ORD-${date}${sequence}`;
 };
 
 export const getDateRange = (period) => {
@@ -136,5 +136,5 @@ export const generateSePayQrUrl = ({
   bankCode,
 }) => {
   const description = encodeURIComponent(`TT ${orderNumber}`);
-  return `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankCode}&amount=${amount}&des=${description}`;
+  return `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankCode}&amount=${amount}`;
 };

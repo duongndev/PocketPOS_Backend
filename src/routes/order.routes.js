@@ -12,6 +12,8 @@ router.get("/", orderCtrl.getOrders);
 
 router.get("/:id", orderCtrl.getOrderById);
 
+router.patch("/:id/payment-status", orderCtrl.updatePaymentStatus);
+
 router.put("/:id/cancel", orderCtrl.cancelOrder);
 
 

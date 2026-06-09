@@ -2,7 +2,30 @@ import mongoose from "mongoose";
 import Order from "../models/order.model.js";
 import Product from "../models/product.model.js";
 import Payment from "../models/payment.model.js";
+import { emitPaymentUpdate } from "../socket.js";
 import logger from "../utils/logger.util.js";
+
+const normalizeText = (value) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+
+const emitPaymentSuccess = (payment, order, transactionId, gateway, referenceCode) => {
+  emitPaymentUpdate(payment.storeId, {
+    event: "payment_success",
+    orderId: order._id.toString(),
+    orderNumber: order.orderNumber,
+    paymentStatus: "paid",
+    orderStatus: order.status,
+    amount: Number(payment.amount),
+    transactionId,
+    referenceCode,
+    gateway,
+    timestamp: new Date().toISOString(),
+  });
+};
 
 export const sepayWebhook = async (req, res) => {
   const session = await mongoose.startSession();
@@ -18,10 +41,18 @@ export const sepayWebhook = async (req, res) => {
       transferType,
       transferAmount,
       referenceCode,
+      code,
     } = req.body;
 
     logger.info("SEPAY_WEBHOOK_RECEIVED", {
       payload: req.body,
+      rawContent: content,
+      rawReferenceCode: referenceCode,
+      rawCode: code,
+      transferType,
+      transferAmount,
+      gateway,
+      transactionDate,
     });
 
     /**
@@ -59,14 +90,80 @@ export const sepayWebhook = async (req, res) => {
      * Ví dụ:
      * TT ORD202606080001
      */
-    const payment =
-      await Payment.findOne({
-        qrContent: content,
-      }).session(session);
+    const normalizedContent = normalizeText(content);
+    const normalizedReferenceCode = normalizeText(referenceCode);
+    const normalizedCode = normalizeText(code);
 
-    if (!payment) {
+    const paymentCandidates = await Payment.find({
+      paymentMethod: "bank_transfer",
+      paymentStatus: "pending",
+      $or: [
+        { qrContent: { $exists: true, $ne: null } },
+        { referenceCode: { $exists: true, $ne: null } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .session(session);
+
+    let matchedPayment = null;
+
+    if (referenceCode || content) {
+      matchedPayment = paymentCandidates.find((item) => {
+        const normalizedQrContent = normalizeText(item.qrContent);
+        const normalizedPaymentReferenceCode = normalizeText(item.referenceCode);
+
+        const byReferenceCode =
+          normalizedReferenceCode &&
+          normalizedPaymentReferenceCode &&
+          (normalizedReferenceCode.includes(normalizedPaymentReferenceCode) ||
+            normalizedPaymentReferenceCode.includes(normalizedReferenceCode));
+
+        const byCode =
+          normalizedCode &&
+          normalizedQrContent &&
+          (normalizedCode.includes(normalizedQrContent) ||
+            normalizedQrContent.includes(normalizedCode));
+
+        const byContent =
+          normalizedContent &&
+          normalizedQrContent &&
+          (normalizedContent.includes(normalizedQrContent) ||
+            normalizedQrContent.includes(normalizedContent));
+
+        return byReferenceCode || byCode || byContent;
+      });
+    }
+
+    if (!matchedPayment) {
+      matchedPayment = paymentCandidates.find((item) => {
+        const normalizedQrContent = normalizeText(item.qrContent);
+
+        return (
+          normalizedContent.includes(normalizedQrContent) ||
+          normalizedQrContent.includes(normalizedContent)
+        );
+      });
+    }
+
+    if (!matchedPayment) {
+      const amountMatches = paymentCandidates.filter(
+        (item) => Number(item.amount) === Number(transferAmount),
+      );
+
+      if (amountMatches.length > 0) {
+        matchedPayment = amountMatches[0];
+      }
+    }
+
+    if (!matchedPayment) {
       logger.warn("PAYMENT_NOT_FOUND", {
         content,
+        referenceCode,
+        paymentCandidatesCount: paymentCandidates.length,
+        normalizedContent,
+        normalizedReferenceCode,
+        normalizedCode,
+        transferAmount,
       });
 
       await session.commitTransaction();
@@ -80,6 +177,8 @@ export const sepayWebhook = async (req, res) => {
     /**
      * Đã thanh toán rồi
      */
+    const payment = matchedPayment;
+
     if (payment.paymentStatus === "paid") {
       await session.commitTransaction();
 
@@ -135,6 +234,8 @@ export const sepayWebhook = async (req, res) => {
       });
 
       await session.commitTransaction();
+
+      emitPaymentSuccess(payment, order, id, gateway, referenceCode);
 
       return res.status(200).json({
         success: true,
@@ -215,6 +316,8 @@ export const sepayWebhook = async (req, res) => {
     });
 
     await session.commitTransaction();
+
+    emitPaymentSuccess(payment, order, id, gateway, referenceCode);
 
     logger.info(
       "PAYMENT_COMPLETED",

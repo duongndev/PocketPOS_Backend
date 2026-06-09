@@ -22,9 +22,8 @@ app.use(requestLogger);
 
 // Body parsing middleware
 app.use(express.json({ 
-  limit: '10mb',
   verify: (req, res, buf) => {
-    req.rawBody = buf;
+    req.rawBody = buf.toString("utf8");
   }
 }));
 app.use(express.urlencoded({ 

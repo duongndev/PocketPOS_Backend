@@ -32,8 +32,6 @@ const paymentSchema = new mongoose.Schema({
 
   qrContent: String,
 
-  qrUrl: String,
-
   transactionId: {
     type: Number,
     default: null,

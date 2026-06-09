@@ -202,7 +202,6 @@ export const createOrder = async (req, res) => {
           paymentStatus: paymentMethod === "cash" ? "paid" : "pending",
           qrContent:
             paymentMethod === "bank_transfer" ? `TT ${orderNumber}` : null,
-          qrUrl,
           paidAt: paymentMethod === "cash" ? new Date() : null,
         },
       ],
@@ -268,18 +267,24 @@ export const createOrder = async (req, res) => {
 
 export const getOrderById = async (req, res) => {
   try {
-    const order = await Order.findOne({
-      _id: req.params.id,
-      storeId: req.user.storeId,
-    }).populate("createdBy", "fullName");
+    const [order, payment] = await Promise.all([
+      Order.findOne({
+        _id: req.params.id,
+        storeId: req.user.storeId,
+      }).populate("createdBy", "fullName"),
+      Payment.findOne({
+        orderId: req.params.id,
+        storeId: req.user.storeId,
+      }).lean(),
+    ]);
 
     if (!order) {
       return notFoundResponse(res, "Không tìm thấy hóa đơn");
     }
 
     const items = order.items;
-
     const orderInfo = order.toObject();
+
     delete orderInfo.items;
 
     logger.info("Lấy chi tiết đơn hàng", {
@@ -292,12 +297,14 @@ export const getOrderById = async (req, res) => {
       details: {
         orderId: req.params.id,
         items,
+        paymentStatus: payment?.paymentStatus || null,
       },
     });
 
     return successResponse(res, "Lấy chi tiết đơn hàng thành công", {
       order: orderInfo,
       items,
+      payment: payment || null,
     });
   } catch (error) {
     logger.error("Lỗi khi lấy chi tiết đơn hàng", {
@@ -309,9 +316,10 @@ export const getOrderById = async (req, res) => {
       action: "GET_ORDER_DETAIL",
       details: {
         orderId: req.params.id,
-        items: order.items,
+        error: error.message,
       },
     });
+
     return errorResponse(res, "Lỗi hệ thống", error.message);
   }
 };
@@ -434,5 +442,138 @@ export const getOrders = async (req, res) => {
       stack: error.stack,
     });
     return errorResponse(res, "Lỗi hệ thống", error.message);
+  }
+};
+
+export const updatePaymentStatus = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const orderId = req.params.id || req.body.orderId;
+    const { paymentStatus } = req.body;
+
+    if (!orderId) {
+      return badRequestResponse(res, "Thiếu mã đơn hàng");
+    }
+
+    if (!['pending', 'paid', 'failed'].includes(paymentStatus)) {
+      return badRequestResponse(res, "Trạng thái thanh toán không hợp lệ");
+    }
+
+    const order = await Order.findOne({
+      _id: orderId,
+      storeId: req.user.storeId,
+    }).session(session);
+
+    
+    if (!order) {
+      return notFoundResponse(res, "Không tìm thấy đơn hàng");
+    }
+
+    const payment = await Payment.findOne({
+      orderId: order._id,
+      storeId: req.user.storeId,
+    }).session(session);
+
+    if (!payment) {
+      return notFoundResponse(res, "Không tìm thấy thông tin thanh toán");
+    }
+
+    if (payment.paymentStatus === paymentStatus) {
+      return successResponse(res, "Trạng thái thanh toán đã được cập nhật", {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        paymentStatus: payment.paymentStatus,
+        orderStatus: order.status,
+      });
+    }
+
+    if (paymentStatus === "paid") {
+      if (order.status !== "completed") {
+        if (payment.paymentMethod === "bank_transfer") {
+          const stockOperations = [];
+
+          for (const item of order.items) {
+            stockOperations.push({
+              updateOne: {
+                filter: {
+                  _id: item.productId,
+                  stock: { $gte: item.quantity },
+                },
+                update: {
+                  $inc: { stock: -item.quantity },
+                },
+              },
+            });
+          }
+
+          if (stockOperations.length > 0) {
+            const result = await Product.bulkWrite(stockOperations, { session });
+
+            if (result.modifiedCount !== stockOperations.length) {
+              return badRequestResponse(res, "Không thể cập nhật tồn kho");
+            }
+          }
+        }
+
+        order.status = "completed";
+      }
+
+      payment.paymentStatus = "paid";
+      payment.paidAt = payment.paidAt || new Date();
+    } else {
+      payment.paymentStatus = paymentStatus;
+
+      if (paymentStatus === "failed") {
+        payment.paidAt = null;
+      }
+    }
+
+    await Promise.all([payment.save({ session }), order.save({ session })]);
+    await session.commitTransaction();
+
+    logger.info("CẬP_NHẬT_TRẠNG_THAI_THANH_TOÁN", {
+      userId: req.user._id,
+      storeId: req.user.storeId,
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      paymentStatus,
+      action: "UPDATE_PAYMENT_STATUS",
+    });
+
+    // lấy chi tiết đơn hàng bao gồm cả thanh toán
+    const [orderInfo, paymentInfo] = await Promise.all([
+      Order.findOne({
+        _id: orderId,
+        storeId: req.user.storeId,
+      }).session(session),
+      Payment.findOne({
+        orderId: orderId,
+        storeId: req.user.storeId,
+      }).session(session),
+    ]);
+    
+    return successResponse(res, "Cập nhật trạng thái thanh toán", {
+      orderId: orderInfo._id,
+      orderNumber: orderInfo.orderNumber,
+      paymentStatus: paymentInfo.paymentStatus,
+      orderStatus: orderInfo.status,
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    logger.error("Lỗi cập nhật trạng thái thanh toán", {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user._id,
+      storeId: req.user.storeId,
+      action: "UPDATE_PAYMENT_STATUS",
+    });
+
+    return errorResponse(res, "Lỗi hệ thống", error.message);
+  } finally {
+    await session.endSession();
   }
 };
