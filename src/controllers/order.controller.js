@@ -29,7 +29,7 @@ export const createOrder = async (req, res) => {
     }
 
     if (!["cash", "bank_transfer"].includes(paymentMethod)) {
-      return badRequestResponse(res, "Phuong thức thanh toán không hợp lệ");
+      return badRequestResponse(res, "Phương thức thanh toán không hợp lệ");
     }
 
     const store = await Store.findById(req.user.storeId).session(session);
@@ -152,7 +152,7 @@ export const createOrder = async (req, res) => {
       return badRequestResponse(res, "Tổng tiền đơn hàng không hợp lệ");
     }
 
-    const orderNumber = await generateOrderNumber();
+    const orderNumber = await generateOrderNumber(session);
 
     const profit = totalAmount - totalCost;
 

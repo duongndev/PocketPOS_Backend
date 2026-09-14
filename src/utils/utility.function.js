@@ -26,7 +26,7 @@ export const generateSKU = (name) => {
 
 import Counter from "../models/counter.model.js";
 
-export const generateOrderNumber = async () => {
+export const generateOrderNumber = async (session = null) => {
   const now = new Date();
 
   const date =
@@ -46,6 +46,7 @@ export const generateOrderNumber = async () => {
     {
       new: true,
       upsert: true,
+      session: session,
     },
   );
 
