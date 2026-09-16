@@ -124,7 +124,7 @@ const getRevenueChart = async (storeId, startDate, endDate, period) => {
       {
         $group: {
           _id: {
-            $hour: "$createdAt",
+            $hour: { date: "$createdAt", timezone: "Asia/Ho_Chi_Minh" },
           },
           revenue: {
             $sum: "$totalAmount",
@@ -159,6 +159,7 @@ const getRevenueChart = async (storeId, startDate, endDate, period) => {
             $dateToString: {
               format: "%d/%m",
               date: "$createdAt",
+              timezone: "Asia/Ho_Chi_Minh",
             },
           },
           revenue: {
@@ -190,7 +191,7 @@ const getRevenueChart = async (storeId, startDate, endDate, period) => {
     {
       $group: {
         _id: {
-          $dayOfMonth: "$createdAt",
+          $dayOfMonth: { date: "$createdAt", timezone: "Asia/Ho_Chi_Minh" },
         },
         revenue: {
           $sum: "$totalAmount",

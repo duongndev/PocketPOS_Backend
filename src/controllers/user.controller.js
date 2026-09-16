@@ -182,18 +182,20 @@ export const getUsers = async (req, res) => {
       ];
     }
 
-    const users = await User.find(query)
-      .select('-password')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit))
+        .lean(),
+      User.countDocuments(query),
+    ]);
 
-    const total = await User.countDocuments(query);
-
-    logger.info('Danh sách người dùng đã được lấy thành công', {
+    logger.info("Danh sách người dùng đã được lấy thành công", {
       totalUsers: total,
       page: parseInt(page),
-      limit: parseInt(limit)
+      limit: parseInt(limit),
     });
 
     return successResponse(res, 'Lấy danh sách người dùng thành công', {

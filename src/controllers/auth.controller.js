@@ -5,6 +5,7 @@ import { generateTokens } from "../middlewares/auth.middleware.js";
 import logger from "../utils/logger.util.js";
 import { validateUserData } from "../utils/validation.util.js";
 import Store from "../models/store.model.js";
+import mongoose from "mongoose";
 
 // ===== AUTHENTICATION OPERATIONS =====
 
@@ -14,7 +15,11 @@ import Store from "../models/store.model.js";
  * @param {Object} res - Express response object
  */
 export const register = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    await session.startTransaction();
+
     const { storeName, fullName, email, password, confirmPassword, phone } =
       req.body;
 
@@ -28,7 +33,7 @@ export const register = async (req, res) => {
 
     const existingEmail = await User.findOne({
       email: email.trim().toLowerCase(),
-    });
+    }).session(session);
     if (existingEmail) {
       return errorResponse(res, 409, "Email đã tồn tại");
     }
@@ -39,49 +44,56 @@ export const register = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-    const store = await Store.create({
+    const store = await Store.create([{
       storeName,
-    });
+    }], { session });
 
-    const user = await User.create({
+    const createdStore = store[0];
+
+    const user = await User.create([{
       fullName,
       email,
       phone,
       password: hashPassword,
-      storeId: store._id,
-    });
+      storeId: createdStore._id,
+    }], { session });
 
-    await user.save();
+    const createdUser = user[0];
 
-    store.ownerId = user._id;
-    await store.save();
+    createdStore.ownerId = createdUser._id;
+    await createdStore.save({ session });
+
+    await session.commitTransaction();
 
     logger.info("Người dùng đã đăng ký thành công", {
-      userId: user._id,
-      email: user.email,
-      role: user.role,
-      storeId: store._id,
+      userId: createdUser._id,
+      email: createdUser.email,
+      role: createdUser.role,
+      storeId: createdStore._id,
       ip: req.ip,
       action: "REGISTER",
     });
 
     return successResponse(res, "Đăng ký thành công", {
       user: {
-        id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        storeId: user.storeId,
+        id: createdUser._id,
+        fullName: createdUser.fullName,
+        email: createdUser.email,
+        phone: createdUser.phone,
+        role: createdUser.role,
+        storeId: createdUser.storeId,
       },
     });
   } catch (error) {
+    await session.abortTransaction();
     logger.error("Lỗi khi đăng ký người dùng", {
       error: error.message,
       stack: error.stack,
       body: req.body,
     });
     return errorResponse(res, "Lỗi khi đăng ký người dùng", error.message);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -138,7 +150,7 @@ export const login = async (req, res) => {
         phone: user.phone,
         isActive: user.isActive,
         lastLoginAt: user.lastLoginAt,
-        store: {
+        storeId: {
           _id: user.storeId?._id,
           storeName: user.storeId?.storeName,
           phoneNumber: user.storeId?.phoneNumber,
@@ -207,7 +219,7 @@ export const getProfile = async (req, res) => {
       userId: userId,
       email: user.email,
       role: user.role,
-      storeId: user.storeId,
+      store: user.storeId,
       ip: req.ip,
       action: "GET_PROFILE",
     });

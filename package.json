@@ -11,7 +11,8 @@
     "seed:categories": "node scripts/seed-categories.js",
     "seed:products": "node scripts/seed-products.js",
     "seed:variants": "node scripts/seed-products-with-variants.js",
-    "seed:help": "node scripts/seed-all.js --help"
+    "seed:help": "node scripts/seed-all.js --help",
+    "seed:mock": "node scripts/generate-mock-data.js"
   },
   "keywords": [],
   "author": "duongnd",
@@ -34,5 +35,8 @@
     "path": "^0.12.7",
     "socket.io": "^4.8.3",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^10.6.0"
   }
 }
