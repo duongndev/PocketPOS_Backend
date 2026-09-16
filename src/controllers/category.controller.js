@@ -1,6 +1,13 @@
 import Category from "../models/category.model.js";
 import Product from "../models/product.model.js";
-import { successResponse, errorResponse } from "../utils/response.js";
+import { 
+  successResponse, 
+  createdResponse,
+  conflictResponse,
+  internalServerErrorResponse,
+  notFoundResponse,
+  badRequestResponse 
+} from "../utils/response.js";
 import {
   paginate,
   parsePaginationParams,
@@ -14,7 +21,7 @@ export const createCategory = async (req, res) => {
     const { name, description } = req.body;
 
     if (!name?.trim()) {
-      return errorResponse(res, "Tên danh mục không được để trống");
+      return badRequestResponse(res, "Tên danh mục không được để trống");
     }
 
     const existingCategory = await Category.findOne({
@@ -23,7 +30,7 @@ export const createCategory = async (req, res) => {
       isActive: true,
     });
     if (existingCategory) {
-      return errorResponse(res, "Danh mục đã tồn tại", 409);
+      return conflictResponse(res, "Danh mục đã tồn tại");
     }
 
     const category = await Category.create({
@@ -41,11 +48,10 @@ export const createCategory = async (req, res) => {
       action: "CREATE_CATEGORY",
     });
 
-    return successResponse(
+    return createdResponse(
       res,
       "Danh mục đã được tạo thành công",
-      category,
-      201,
+      category
     );
   } catch (error) {
     logger.error("Lỗi khi tạo danh mục", {
@@ -53,7 +59,7 @@ export const createCategory = async (req, res) => {
       stack: error.stack,
       body: req.body,
     });
-    return errorResponse(res, "Lỗi khi tạo danh mục", 500, error.message);
+    return internalServerErrorResponse(res, "Lỗi khi tạo danh mục");
   }
 };
 
@@ -87,10 +93,9 @@ export const getCategories = async (req, res) => {
 
     return successResponse(
       res,
-      200,
       "Danh sách danh mục đã được lấy thành công",
       result.data,
-      result.pagination,
+      result.pagination
     );
   } catch (error) {
     logger.error("Lỗi khi lấy danh sách danh mục", {
@@ -98,7 +103,7 @@ export const getCategories = async (req, res) => {
       stack: error.stack,
       query: req.query,
     });
-    return errorResponse(res, "Lỗi khi lấy danh sách danh mục", 500, error.message);
+    return internalServerErrorResponse(res, "Lỗi khi lấy danh sách danh mục");
   }
 };
 
@@ -113,7 +118,7 @@ export const getCategoryById = async (req, res) => {
     });
 
     if (!category) {
-      return errorResponse(res, "Không tìm thấy danh mục", 404);
+      return notFoundResponse(res, "Không tìm thấy danh mục");
     }
 
     logger.info("Lấy thông tin danh mục", {
@@ -131,7 +136,7 @@ export const getCategoryById = async (req, res) => {
     return successResponse(
       res,
       "Thông tin danh mục đã được lấy thành công",
-      category,
+      category
     );
   } catch (error) {
     logger.error("Lỗi khi lấy thông tin danh mục", {
@@ -139,7 +144,7 @@ export const getCategoryById = async (req, res) => {
       stack: error.stack,
       params: req.params,
     });
-    return errorResponse(res, "Lỗi khi lấy thông tin danh mục", 500, error.message);
+    return internalServerErrorResponse(res, "Lỗi khi lấy thông tin danh mục");
   }
 };
 
@@ -155,7 +160,7 @@ export const updateCategory = async (req, res) => {
     });
 
     if (!category) {
-      return errorResponse(res, "Không tìm thấy danh mục", 404);
+      return notFoundResponse(res, "Không tìm thấy danh mục");
     }
 
     const updatedCategory = await Category.findByIdAndUpdate(
@@ -191,7 +196,7 @@ export const updateCategory = async (req, res) => {
       params: req.params,
       body: req.body,
     });
-    return errorResponse(res, "Lỗi khi cập nhật danh mục", 500, error.message);
+    return internalServerErrorResponse(res, "Lỗi khi cập nhật danh mục");
   }
 };
 
@@ -206,7 +211,7 @@ export const deleteCategory = async (req, res) => {
     });
 
     if (!category) {
-      return errorResponse(res, "Không tìm thấy danh mục", 404);
+      return notFoundResponse(res, "Không tìm thấy danh mục");
     }
 
     const hasProducts = await Product.exists({
@@ -216,10 +221,9 @@ export const deleteCategory = async (req, res) => {
     });
 
     if (hasProducts) {
-      return errorResponse(
+      return badRequestResponse(
         res,
-        "Không thể xóa danh mục vì còn sản phẩm liên quan",
-        400
+        "Không thể xóa danh mục vì còn sản phẩm liên quan"
       );
     }
 
@@ -245,6 +249,6 @@ export const deleteCategory = async (req, res) => {
       stack: error.stack,
       params: req.params,
     });
-    return errorResponse(res, "Lỗi khi xóa danh mục", 500, error.message);
+    return internalServerErrorResponse(res, "Lỗi khi xóa danh mục");
   }
 };
