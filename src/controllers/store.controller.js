@@ -112,7 +112,18 @@ const isProfileComplete = (store) => {
 
 export const updateStoreProfile = async (req, res) => {
   try {
-    const { storeName, phoneNumber, address, description, logoUrl } = req.body;
+    const {
+      storeName,
+      phoneNumber,
+      address,
+      description,
+      logoUrl,
+      bankInfo,
+      bankCode,
+      bankName,
+      accountNumber,
+      accountHolderName,
+    } = req.body;
 
     // Check if at least one field is provided for update
     const hasDataToUpdate = Object.values(req.body).some(
@@ -149,6 +160,25 @@ export const updateStoreProfile = async (req, res) => {
     // Update store with new data
     Object.assign(store, updateData);
 
+    // Initialize bankInfo if it doesn't exist
+    if (!store.bankInfo) {
+      store.bankInfo = {};
+    }
+
+    // Update bank info from nested object
+    if (bankInfo && typeof bankInfo === "object") {
+      if (bankInfo.bankCode !== undefined) store.bankInfo.bankCode = bankInfo.bankCode;
+      if (bankInfo.bankName !== undefined) store.bankInfo.bankName = bankInfo.bankName;
+      if (bankInfo.accountNumber !== undefined) store.bankInfo.accountNumber = bankInfo.accountNumber;
+      if (bankInfo.accountHolderName !== undefined) store.bankInfo.accountHolderName = bankInfo.accountHolderName;
+    } else {
+      // Update bank info from flat properties
+      if (bankCode !== undefined) store.bankInfo.bankCode = bankCode;
+      if (bankName !== undefined) store.bankInfo.bankName = bankName;
+      if (accountNumber !== undefined) store.bankInfo.accountNumber = accountNumber;
+      if (accountHolderName !== undefined) store.bankInfo.accountHolderName = accountHolderName;
+    }
+
     // Calculate profile completion status
     store.isCompleteProfile = isProfileComplete(store);
 
@@ -162,7 +192,7 @@ export const updateStoreProfile = async (req, res) => {
       storeId: req.user.storeId,
       ip: req.ip,
       action: "UPDATE_STORE_PROFILE",
-      updatedFields: Object.keys(updateData),
+      updatedFields: Object.keys(req.body),
     });
 
     return successResponse(
@@ -247,65 +277,6 @@ export const getBanks = async (req, res) => {
     return errorResponse(
       res,
       "Không thể lấy danh sách ngân hàng",
-      error.message,
-    );
-  }
-};
-
-export const updateBankInfo = async (req, res) => {
-  try {
-    const { bankCode, bankName, accountNumber, accountHolderName } = req.body;
-
-    const store = await Store.findByIdAndUpdate(
-      req.user.storeId,
-      {
-        bankInfo: {
-          bankCode,
-          bankName,
-          accountNumber,
-          accountHolderName,
-        },
-      },
-      {
-        new: true,
-      },
-    );
-
-    if (!store) {
-      return notFoundResponse(res, "Không tìm thấy cửa hàng");
-    }
-
-    logger.info("Cập nhật thông tin ngân hàng", {
-      userId: req.user._id,
-      email: req.user.email,
-      role: req.user.role,
-      storeId: req.user.storeId,
-      ip: req.ip,
-      action: "UPDATE_BANK_INFO",
-      details: {
-        bankCode,
-        bankName,
-        accountNumber,
-        accountHolderName,
-      },
-    });
-
-    return successResponse(
-      res,
-      "Cập nhật thông tin ngân hàng thành công",
-      store,
-    );
-  } catch (error) {
-    logger.error("Lỗi khi cập nhật thông tin ngân hàng", {
-      error: error.message,
-      stack: error.stack,
-      userId: req.user._id,
-      ip: req.ip,
-      action: "UPDATE_BANK_INFO",
-    });
-    return errorResponse(
-      res,
-      "Không thể cập nhật thông tin ngân hàng",
       error.message,
     );
   }

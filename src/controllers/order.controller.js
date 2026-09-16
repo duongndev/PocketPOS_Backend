@@ -40,8 +40,10 @@ export const createOrder = async (req, res) => {
 
     if (
       paymentMethod === "bank_transfer" &&
-      (!store.bankInfo?.accountNumber || !store.bankInfo?.bankCode)
+      (!store.bankInfo?.accountNumber || !store.bankInfo?.bankName)
     ) {
+      console.log(store.bankInfo);
+
       return badRequestResponse(
         res,
         "Vui lòng cấu hình tài khoản ngân hàng trước khi thanh toán chuyển khoản",

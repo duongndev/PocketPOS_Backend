@@ -15,29 +15,26 @@ export const buildDailyChart = (data) => {
 };
 
 export const buildWeeklyChart = (data, startDate) => {
+  const chartMap = new Map();
   const chart = [];
 
   for (let i = 0; i < 7; i++) {
     const date = new Date(startDate);
-
     date.setDate(startDate.getDate() + i);
 
-    const label = date.toLocaleDateString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-    });
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const label = `${dd}/${mm}`;
 
-    chart.push({
-      label,
-      revenue: 0,
-    });
+    const dataPoint = { label, revenue: 0 };
+    chart.push(dataPoint);
+    chartMap.set(label, dataPoint);
   }
 
   data.forEach((item) => {
-    const found = chart.find((x) => x.label === item._id);
-
-    if (found) {
-      found.revenue = item.revenue;
+    const dataPoint = chartMap.get(item._id);
+    if (dataPoint) {
+      dataPoint.revenue = item.revenue;
     }
   });
 
